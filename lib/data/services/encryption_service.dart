@@ -8,7 +8,7 @@ import '../../core/constants/app_constants.dart';
 class EncryptionService {
   EncryptionService({String? secretKey})
       : _key = Key.fromUtf8(secretKey ?? AppConstants.encryptionKey),
-        _ivLength = 16;
+        _ivLength = 12;
 
   final Key _key;
   final int _ivLength;
