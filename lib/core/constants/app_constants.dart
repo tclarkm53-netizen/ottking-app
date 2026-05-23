@@ -5,7 +5,7 @@ class AppConstants {
   static const String appTagline = 'Secure Live TV for every screen';
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:8000',
+    defaultValue: 'https://verify-app.alwaysdata.net/api',
   );
   static const String apiKeyId = 'ottking-mobile';
   static const String hmacSecret = String.fromEnvironment(
