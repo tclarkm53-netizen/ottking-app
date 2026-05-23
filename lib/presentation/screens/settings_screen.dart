@@ -125,6 +125,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     'API status: ${appState.errorMessage.isEmpty ? 'Secure sync active' : 'Needs attention'}',
                   ),
+                  if (appState.errorMessage.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Error: ${appState.errorMessage}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

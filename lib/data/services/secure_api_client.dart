@@ -24,8 +24,9 @@ class SecureApiClient {
     final signaturePayload = '$timestamp|$endpoint|$encryptedBody';
     final signature = encryptionService.sign(signaturePayload);
 
+    final baseUrl = _baseUrl.endsWith('/') ? _baseUrl.substring(0, _baseUrl.length - 1) : _baseUrl;
     final response = await http.post(
-      Uri.parse('$_baseUrl/$endpoint'),
+      Uri.parse('$baseUrl/$endpoint'),
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': AppConstants.apiKeyId,
