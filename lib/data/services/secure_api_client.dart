@@ -1,0 +1,55 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import '../../core/constants/app_constants.dart';
+import 'encryption_service.dart';
+import 'secure_storage_service.dart';
+
+class SecureApiClient {
+  SecureApiClient({
+    required this.encryptionService,
+    required this.secureStorage,
+    String? baseUrl,
+  }) : _baseUrl = baseUrl ?? AppConstants.apiBaseUrl;
+
+  final EncryptionService encryptionService;
+  final SecureStorageService secureStorage;
+  final String _baseUrl;
+
+  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
+    final timestamp = DateTime.now().toUtc().toIso8601String();
+    final body = jsonEncode(payload);
+    final encryptedBody = encryptionService.encrypt(body);
+    final signaturePayload = '$timestamp|$endpoint|$encryptedBody';
+    final signature = encryptionService.sign(signaturePayload);
+
+    final response = await http.post(
+      Uri.parse('$_baseUrl/$endpoint'),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': AppConstants.apiKeyId,
+        'x-timestamp': timestamp,
+        'x-signature': signature,
+      },
+      body: jsonEncode({
+        'encrypted_payload': encryptedBody,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Secure API request failed: ${response.statusCode}');
+    }
+
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final encryptedResponse = decoded['encrypted_payload'] as String;
+    final signedResponse = decoded['signature'] as String;
+    final decrypted = encryptionService.decrypt(encryptedResponse);
+
+    if (!encryptionService.verify(decrypted, signedResponse)) {
+      throw Exception('Signature verification failed for response');
+    }
+
+    return jsonDecode(decrypted) as Map<String, dynamic>;
+  }
+}

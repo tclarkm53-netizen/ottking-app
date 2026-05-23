@@ -1,0 +1,20 @@
+# Flutter/Dart
+.DS_Store
+.dart_tool/
+.packages
+.pub-cache/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+android/app/debug.keystore
+ios/Flutter/Flutter.framework
+ios/Pods/
+
+# Android signing
+android/key.properties
+android/app/upload-keystore.jks
+
+# IDE
+.idea/
+.vscode/
+*.iml

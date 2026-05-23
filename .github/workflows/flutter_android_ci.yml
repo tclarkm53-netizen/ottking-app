@@ -1,0 +1,88 @@
+name: Flutter Android CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+
+    env:
+      API_BASE_URL: http://localhost:8000
+      HMAC_SECRET_KEY: ${{ secrets.HMAC_SECRET_KEY }}
+      ENCRYPTION_KEY: ${{ secrets.HMAC_SECRET_KEY }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+      KEY_DN: ${{ secrets.KEY_DN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Configure Flutter SDK path
+        run: |
+          FLUTTER_ROOT=$(dirname "$(dirname "$(readlink -f "$(which flutter)")")")
+          echo "FLUTTER_ROOT=$FLUTTER_ROOT" >> "$GITHUB_ENV"
+
+      - name: Prepare icon assets
+        run: |
+          if [ -f app_assets/icon.png ]; then
+            echo "Using app_assets/icon.png"
+          else
+            echo "Missing app_assets/icon.png. Add your launcher icon to app_assets/icon.png to enable automatic icon replacement." >&2
+            exit 1
+          fi
+
+      - name: Prepare Android signing
+        run: |
+          set -e
+          keytool -genkeypair \
+            -v \
+            -keystore android/app/upload-keystore.jks \
+            -alias "$KEY_ALIAS" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -dname "$KEY_DN"
+
+          cat > android/key.properties <<EOF
+          storeFile=upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate launcher icons
+        run: flutter pub run flutter_launcher_icons
+
+      - name: Build Android App Bundle
+        run: flutter build appbundle --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
+
+      - name: Upload Android bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appbundle-release
+          path: build/app/outputs/bundle/release/app-release.aab
