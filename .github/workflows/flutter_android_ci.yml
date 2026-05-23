@@ -1,19 +1,14 @@
 name: Flutter Android CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
 
     env:
-      API_BASE_URL: http://localhost:8000
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
       HMAC_SECRET_KEY: ${{ secrets.HMAC_SECRET_KEY }}
       ENCRYPTION_KEY: ${{ secrets.HMAC_SECRET_KEY }}
       KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -22,7 +17,7 @@ jobs:
       KEY_DN: ${{ secrets.KEY_DN }}
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -65,7 +60,7 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -dname "$KEY_DN"
 
-          cat > android/key.properties <<EOF
+          cat > android/app/key.properties <<EOF
           storeFile=upload-keystore.jks
           storePassword=$KEYSTORE_PASSWORD
           keyAlias=$KEY_ALIAS
@@ -76,13 +71,19 @@ jobs:
         run: flutter pub get
 
       - name: Generate launcher icons
-        run: flutter pub run flutter_launcher_icons
+        run: dart run flutter_launcher_icons
 
-      - name: Build Android App Bundle
-        run: flutter build appbundle --release --dart-define=API_BASE_URL="$API_BASE_URL" --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
+      - name: Build Android APK
+        run: |
+          flutter build apk --release \
+            --split-per-abi \
+            --android-skip-build-dependency-validation \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
+            --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" \
+            --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
 
-      - name: Upload Android bundle artifact
+      - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: appbundle-release
-          path: build/app/outputs/bundle/release/app-release.aab
+          name: ottking-app-release-apk
+          path: build/app/outputs/flutter-apk/*-release.apk

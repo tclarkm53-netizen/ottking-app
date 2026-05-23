@@ -12,6 +12,7 @@ ios/Pods/
 
 # Android signing
 android/key.properties
+android/app/key.properties
 android/app/upload-keystore.jks
 
 # IDE
