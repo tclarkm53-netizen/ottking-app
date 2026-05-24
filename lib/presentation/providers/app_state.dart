@@ -66,6 +66,10 @@ class AppState extends ChangeNotifier {
       }
       errorMessage = '';
     } catch (error) {
+      channels = [];
+      categories = [];
+      banners = [];
+      plans = [];
       errorMessage = error.toString();
     }
     notifyListeners();
@@ -89,12 +93,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> login(String email, String password) async {
+    errorMessage = '';
+    notifyListeners();
+
     try {
       final response = await repository.authenticate(email, password);
       final token = response['token'] as String? ?? 'demo-token';
-      final profile = UserProfileModel(
-        email: email,
-        plan: response['plan'] as String? ?? 'Premium',
+      final profile = UserProfileModel.fromJson(
+        {
+          'email': response['email'] as String? ?? email,
+          'plan': response['plan'] as String? ?? 'Premium',
+        },
       );
       await secureStorage.saveAuthToken(token);
       await secureStorage.saveUserProfile(profile);
@@ -108,12 +117,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> register(String email, String password) async {
+    errorMessage = '';
+    notifyListeners();
+
     try {
       final response = await repository.register(email, password);
       final token = response['token'] as String? ?? 'demo-token';
-      final profile = UserProfileModel(
-        email: email,
-        plan: response['plan'] as String? ?? 'Premium',
+      final profile = UserProfileModel.fromJson(
+        {
+          'email': response['email'] as String? ?? email,
+          'plan': response['plan'] as String? ?? 'Premium',
+        },
       );
       await secureStorage.saveAuthToken(token);
       await secureStorage.saveUserProfile(profile);

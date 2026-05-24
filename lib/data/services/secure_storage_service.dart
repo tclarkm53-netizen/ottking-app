@@ -23,6 +23,10 @@ class SecureStorageService {
     return token != null && token.isNotEmpty;
   }
 
+  Future<String?> readAuthToken() async {
+    return _storage.read(key: 'auth_token');
+  }
+
   Future<UserProfileModel?> readUserProfile() async {
     final raw = await _storage.read(key: 'user_profile');
     if (raw == null || raw.isEmpty) {
@@ -30,10 +34,7 @@ class SecureStorageService {
     }
 
     final map = jsonDecode(raw) as Map<String, dynamic>;
-    return UserProfileModel(
-      email: map['email'] as String,
-      plan: map['plan'] as String,
-    );
+    return UserProfileModel.fromJson(map);
   }
 
   Future<void> clearSession() async {

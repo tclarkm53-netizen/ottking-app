@@ -205,7 +205,7 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.read<AppState>();
+    final appState = context.watch<AppState>();
 
     return AlertDialog(
       title: Text(_isRegister ? 'Create your account' : 'Login securely'),
@@ -229,6 +229,13 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
               onPressed: () => setState(() => _isRegister = !_isRegister),
               child: Text(_isRegister ? 'Already have an account?' : 'Need an account?'),
             ),
+            if (appState.errorMessage.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                appState.errorMessage,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ],
         ),
       ),
@@ -239,6 +246,10 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
         ),
         ElevatedButton(
           onPressed: () async {
+            if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+              return;
+            }
+
             if (_isRegister) {
               await appState.register(
                 _emailController.text,
@@ -250,7 +261,12 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
                 _passwordController.text,
               );
             }
-            if (mounted) {
+
+            if (!mounted) {
+              return;
+            }
+
+            if (appState.errorMessage.isEmpty) {
               Navigator.pop(context);
             }
           },

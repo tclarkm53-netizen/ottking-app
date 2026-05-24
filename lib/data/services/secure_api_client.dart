@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/constants/app_constants.dart';
@@ -19,10 +20,19 @@ class SecureApiClient {
   final String _baseUrl;
 
   static String _defaultBaseUrl() {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000';
+    if (kIsWeb) {
+      return AppConstants.defaultApiBaseUrl;
     }
-    return AppConstants.apiBaseUrl;
+
+    if (Platform.isAndroid) {
+      return AppConstants.localAndroidApiBaseUrl;
+    }
+
+    if (Platform.isIOS || Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
+      return AppConstants.localDesktopApiBaseUrl;
+    }
+
+    return AppConstants.defaultApiBaseUrl;
   }
 
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
@@ -33,18 +43,32 @@ class SecureApiClient {
     final signature = encryptionService.sign(signaturePayload);
 
     final baseUrl = _baseUrl.endsWith('/') ? _baseUrl.substring(0, _baseUrl.length - 1) : _baseUrl;
-    final response = await http.post(
-      Uri.parse('$baseUrl/$endpoint'),
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': AppConstants.apiKeyId,
-        'x-timestamp': timestamp,
-        'x-signature': signature,
-      },
-      body: jsonEncode({
-        'encrypted_payload': encryptedBody,
-      }),
-    );
+    final uri = Uri.parse('$baseUrl/$endpoint');
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'x-api-key': AppConstants.apiKeyId,
+      'x-timestamp': timestamp,
+      'x-signature': signature,
+    };
+
+    final authToken = await secureStorage.readAuthToken();
+    if (authToken != null && authToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $authToken';
+    }
+
+    late final http.Response response;
+    try {
+      response = await http.post(
+        uri,
+        headers: headers,
+        body: jsonEncode({
+          'encrypted_payload': encryptedBody,
+        }),
+      );
+    } on SocketException catch (error) {
+      throw Exception('Network error connecting to ${uri.host}: ${error.message}');
+    }
 
     if (response.statusCode != 200) {
       String errorDetails = response.body;
