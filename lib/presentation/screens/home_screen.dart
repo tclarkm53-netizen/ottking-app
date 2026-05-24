@@ -131,7 +131,7 @@ class _HomeBody extends StatelessWidget {
             const SizedBox(height: 24),
           ],
 
-          // ── Channels Premium Grid Card ─────────────────────────────────────
+          // ── Channels Grid (Fixed FocusGlowButton Parameters) ──────────────
           const _SectionHeader(title: 'Live Channels'),
           const SizedBox(height: 12),
           if (appState.channels.isEmpty)
@@ -146,98 +146,40 @@ class _HomeBody extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2, // টিভিতে চাইলে এটি ৩ বা ৪ করে দেওয়া যাবে
-                mainAxisSpacing: 14,
-                crossAxisSpacing: 14,
-                childAspectRatio: 1.4, // কার্ড শেপ করার জন্য রেশিও অ্যাডজাস্ট করা হয়েছে
+                crossAxisCount: 2,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.2, // টিভি ও মোবাইলের জন্য স্ট্যান্ডার্ড এসপেক্ট রেশিও
               ),
               itemCount: appState.channels.length,
               itemBuilder: (context, index) {
                 final channel = appState.channels[index];
-                final isSelected = appState.currentChannelIndex == index;
+                final selected = appState.currentChannelIndex == index;
 
+                // ফিক্সড: কাস্টম চাইল্ড কন্টেইনার বাদ দিয়ে সরাসরি উইজেটের নিজস্ব প্যারামিটার ব্যবহার করা হয়েছে
                 return FocusGlowButton(
-                  selected: isSelected,
+                  label: channel.name,
+                  icon: Icons.live_tv_rounded, // আগের প্লে আইকন থেকে লাইভ টিভি আইকনে চেঞ্জ করা হয়েছে
+                  selected: selected,
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: selected ? Colors.red : theme.colorScheme.primary.withAlpha(40),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      channel.quality,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: selected ? Colors.white : theme.colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                   onTap: () {
                     appState.currentChannelIndex = index;
                     Navigator.pushReplacementNamed(context, '/player');
                   },
-                  // কাস্টম কার্ড উইজেট যা ফোকাস গ্লো বাটনের চাইল্ড হিসেবে কাজ করবে
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      gradient: LinearGradient(
-                        colors: isSelected 
-                            ? [theme.colorScheme.primary.withAlpha(200), const Color(0xFF1E293B)]
-                            : [const Color(0xFF1E293B), const Color(0xFF0F172A)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      border: Border.all(
-                        color: isSelected ? theme.colorScheme.primary : Colors.white10,
-                        width: isSelected ? 2.5 : 1,
-                      ),
-                      boxShadow: isSelected ? [
-                        BoxShadow(
-                          color: theme.colorScheme.primary.withAlpha(100),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        )
-                      ] : [],
-                    ),
-                    padding: const EdgeInsets.all(16),
-                    child: Stack(
-                      children: [
-                        // উপরের কোয়ালিটি ব্যাজ (HD / SD / 4K)
-                        Positioned(
-                          top: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Colors.red : Colors.black45,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              channel.quality,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        // মেইন কন্টেন্ট (আইকন + নাম)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            CircleAvatar(
-                              radius: 18,
-                              backgroundColor: isSelected ? Colors.white : Colors.white12,
-                              child: Icon(
-                                Icons.play_arrow_rounded,
-                                color: isSelected ? theme.colorScheme.primary : Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              channel.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
                 );
               },
             ),
@@ -306,7 +248,7 @@ class _SectionHeader extends StatelessWidget {
       style: Theme.of(context)
           .textTheme
           .titleMedium
-          .copyWith(fontWeight: FontWeight.bold),
+          ?.copyWith(fontWeight: FontWeight.bold), // ফিক্সড: নাল সেফটি নিশ্চিত করতে ?. ব্যবহার করা হয়েছে
     );
   }
 }
@@ -335,7 +277,7 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'message',
+              message,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
