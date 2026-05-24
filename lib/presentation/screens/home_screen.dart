@@ -211,7 +211,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: SafeArea(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         gradient: LinearGradient(
                           colors: [Colors.black87, Colors.transparent],
                           begin: Alignment.topCenter,
@@ -265,7 +265,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [Colors.transparent, Colors.black95],
+                        colors: [Colors.transparent, Colors.black.withAlpha(242)], // ফিক্সড: Colors.black95 পরিবর্তন করে আলফা দেওয়া হয়েছে
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -364,6 +364,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 child: InkWell(
                                   onTap: () {
                                     setState(() {
+                                      // প্রোভাইডার মেথড বা স্টেট হ্যান্ডলিং সেফ জোনে রাখা হয়েছে
                                       appState.currentChannelIndex = index;
                                       _isLoading = true;
                                       _activeChannelId = null;
@@ -392,10 +393,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                           child: ClipRRect(
                                             borderRadius: BorderRadius.circular(6),
                                             child: Image.network(
-                                              ch.logoUrl ?? '', // সার্ভার থেকে আসা লোগো প্রোপার্টি (প্রয়োজনে মডেল অনুযায়ী নাম পরিবর্তন করুন)
+                                              ch.logoUrl ?? '', 
                                               fit: BoxFit.contain,
                                               errorBuilder: (context, error, stackTrace) {
-                                                // কোনো কারণে লোগো না পেলে ডিফল্ট আইকন দেখাবে
                                                 return const Icon(Icons.live_tv, color: Colors.white38, size: 18);
                                               },
                                             ),
@@ -430,7 +430,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৫. ইনফো টোস্ট ───────────────────────────────────────────
+              // ── ৫. INFO TOAST ──
               if (appState.showToast)
                 Positioned(
                   left: 24,
