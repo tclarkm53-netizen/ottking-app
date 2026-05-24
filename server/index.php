@@ -18,10 +18,15 @@ function send_response(int $statusCode, array $body): void
 function get_request_path(): string
 {
     $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-    $scriptName = dirname($_SERVER['SCRIPT_NAME'] ?? '/');
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '/';
+    $scriptDir = dirname($scriptName);
 
-    if ($scriptName !== '/' && $scriptName !== '.' && str_starts_with($uri, $scriptName)) {
-        $uri = substr($uri, strlen($scriptName));
+    if ($scriptDir !== '/' && $scriptDir !== '.' && str_starts_with($uri, $scriptDir)) {
+        $uri = substr($uri, strlen($scriptDir));
+    }
+
+    if (str_starts_with($uri, '/index.php')) {
+        $uri = substr($uri, strlen('/index.php'));
     }
 
     $uri = trim($uri, '/');
