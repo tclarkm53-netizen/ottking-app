@@ -1,293 +1,454 @@
-// lib/presentation/screens/home_screen.dart
+// lib/presentation/screens/player_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../providers/app_state.dart';
-import '../widgets/focus_glow_button.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class PlayerScreen extends StatefulWidget {
+  const PlayerScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  final PageController _pageController =
-      PageController(viewportFraction: 0.93);
+class _PlayerScreenState extends State<PlayerScreen> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'player-root');
+  VideoPlayerController? _controller;
+  String? _activeChannelId;
+  bool _showControls = true;
+  bool _isLoading = false;
+  bool _showChannelListPanel = false; // সাইড চ্যানেল লিস্ট প্যানেল অন/অফ ট্র্যাকিং
 
   @override
-  void dispose() {
-    _rootFocusNode.dispose();
-    _pageController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
+  }
+
+  Future<void> _initController() async {
+    final appState = context.read<AppState>();
+    final channel = appState.currentChannel;
+
+    if (_activeChannelId == channel.id) return;
+
+    setState(() {
+      _isLoading = true;
+      _activeChannelId = channel.id;
+    });
+
+    if (_controller != null) {
+      final oldCtrl = _controller!;
+      _controller = null;
+      try {
+        await oldCtrl.pause();
+      } catch (_) {}
+      await oldCtrl.dispose();
+    }
+
+    final newController =
+        VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
+
+    try {
+      await newController.initialize();
+      
+      if (!mounted) {
+        await newController.dispose();
+        return;
+      }
+
+      await newController.play();
+      
+      newController.addListener(() {
+        if (mounted) setState(() {});
+      });
+
+      setState(() {
+        _controller = newController;
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("Video initialization failed: $e");
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _activeChannelId = null;
+        });
+        
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${channel.name} অফলাইন। অন্য চ্যানেল চেষ্টা করুন।'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _safeChannelSwitch(AppState appState, int direction) {
+    setState(() {
+      _isLoading = false;
+      _activeChannelId = null;
+    });
+    appState.switchChannel(direction);
   }
 
   void _handleKey(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      FocusScope.of(context).nextFocus();
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      FocusScope.of(context).previousFocus();
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      appState.switchChannel(1);
+    
+    // রিমোটের রাইট বা লেফট বাটন চাপলে সাইড চ্যানেল প্যানেল ওপেন/ক্লোজ হবে
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      setState(() => _showChannelListPanel = true);
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      appState.switchChannel(-1);
+      setState(() => _showChannelListPanel = false);
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _safeChannelSwitch(appState, -1);
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _safeChannelSwitch(appState, 1);
+    } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+      if (_showChannelListPanel) {
+        setState(() => _showChannelListPanel = false);
+      } else {
+        _exitPlayer();
+      }
+    } else if (event.logicalKey == LogicalKeyboardKey.space ||
+        event.logicalKey == LogicalKeyboardKey.enter) {
+      _togglePlayPause();
     }
+  }
+
+  void _togglePlayPause() {
+    if (_isLoading) return;
+    final ctrl = _controller;
+    if (ctrl == null) return;
+    setState(() {
+      ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
+    });
+  }
+
+  void _exitPlayer() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    Navigator.pushReplacementNamed(context, '/home');
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration duration) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(duration.inMinutes.remainder(60));
+    final seconds = twoDigits(duration.inSeconds.remainder(60));
+    return "$minutes:$seconds";
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final theme = Theme.of(context);
+
+    if (_activeChannelId != null &&
+        _activeChannelId != appState.currentChannel.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
+    }
+
+    final controller = _controller;
+    final initialized = controller != null && controller.value.isInitialized;
 
     return KeyboardListener(
-      focusNode: _rootFocusNode,
-      onKeyEvent: (event) => _handleKey(event, appState),
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (e) => _handleKey(e, appState),
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text(AppConstants.appName),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => Navigator.pushNamed(context, '/settings'),
-            ),
-          ],
-        ),
-        body: appState.isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
-                ? _ErrorView(
-                    message: appState.errorMessage,
-                    onRetry: appState.loadCatalog,
-                  )
-                : _HomeBody(
-                    appState: appState,
-                    theme: theme,
-                    pageController: _pageController,
-                  ),
-      ),
-    );
-  }
-}
-
-// ── Body ──────────────────────────────────────────────────────────────────────
-
-class _HomeBody extends StatelessWidget {
-  const _HomeBody({
-    required this.appState,
-    required this.theme,
-    required this.pageController,
-  });
-
-  final AppState appState;
-  final ThemeData theme;
-  final PageController pageController;
-
-  @override
-  Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: appState.loadCatalog,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        children: [
-          // ── Banners ──────────────────────────────────────────────────────
-          if (appState.banners.isNotEmpty) ...[
-            SizedBox(
-              height: 190,
-              child: PageView.builder(
-                controller: pageController,
-                itemCount: appState.banners.length,
-                itemBuilder: (context, index) {
-                  final banner = appState.banners[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: _BannerCard(banner: banner, theme: theme),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Categories ───────────────────────────────────────────────────
-          if (appState.categories.isNotEmpty) ...[
-            const _SectionHeader(title: 'Featured Categories'),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: appState.categories.map((cat) {
-                return Chip(
-                  label: Text(cat.name),
-                  avatar: Text(cat.icon),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 24),
-          ],
-
-          // ── Channels Grid (Fixed FocusGlowButton Parameters) ──────────────
-          const _SectionHeader(title: 'Live Channels'),
-          const SizedBox(height: 12),
-          if (appState.channels.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('No channels available'),
-              ),
-            )
-          else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 1.2, // টিভি ও মোবাইলের জন্য স্ট্যান্ডার্ড এসপেক্ট রেশিও
-              ),
-              itemCount: appState.channels.length,
-              itemBuilder: (context, index) {
-                final channel = appState.channels[index];
-                final selected = appState.currentChannelIndex == index;
-
-                // ফিক্সড: কাস্টম চাইল্ড কন্টেইনার বাদ দিয়ে সরাসরি উইজেটের নিজস্ব প্যারামিটার ব্যবহার করা হয়েছে
-                return FocusGlowButton(
-                  label: channel.name,
-                  icon: Icons.live_tv_rounded, // আগের প্লে আইকন থেকে লাইভ টিভি আইকনে চেঞ্জ করা হয়েছে
-                  selected: selected,
-                  trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: selected ? Colors.red : theme.colorScheme.primary.withAlpha(40),
-                      borderRadius: BorderRadius.circular(6),
+        backgroundColor: Colors.black,
+        body: GestureDetector(
+          onTap: () {
+            setState(() {
+              _showControls = !_showControls;
+              // কন্ট্রোলস হাইড হলে সাইড প্যানেলও অটো হাইড হবে
+              if (!_showControls) _showChannelListPanel = false;
+            });
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ── ১. ফুল স্ক্রিন ভিডিও লেয়ার ────────────────────────────────
+              if (initialized && !_isLoading)
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.fill,
+                    child: SizedBox(
+                      width: controller.value.size.width,
+                      height: controller.value.size.height,
+                      child: VideoPlayer(controller),
                     ),
-                    child: Text(
-                      channel.quality,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: selected ? Colors.white : theme.colorScheme.primary,
-                        fontWeight: FontWeight.bold,
+                  ),
+                )
+              else
+                const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+
+              // ── ২. ওটিটি টপ কন্ট্রোল বার ──────────────────────────────────
+              if (_showControls)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: SafeArea(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.black87, Colors.transparent],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                onPressed: _exitPlayer,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                appState.currentChannel.name,
+                                style: const TextStyle(
+                                  color: Colors.white, 
+                                  fontSize: 18, 
+                                  fontWeight: FontWeight.bold
+                                ),
+                              ),
+                            ],
+                          ),
+                          // সাইড লিস্ট ওপেন করার কুইক বাটন ইন্ডিকেটর
+                          IconButton(
+                            icon: Icon(
+                              _showChannelListPanel ? Icons.featured_play_list : Icons.featured_play_list_outlined, 
+                              color: Colors.white
+                            ),
+                            onPressed: () {
+                              setState(() => _showChannelListPanel = !_showChannelListPanel);
+                            },
+                          ),
+                        ],
                       ),
                     ),
                   ),
-                  onTap: () {
-                    appState.currentChannelIndex = index;
-                    Navigator.pushReplacementNamed(context, '/player');
-                  },
-                );
-              },
-            ),
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
-}
+                ),
 
-// ── Banner card ───────────────────────────────────────────────────────────────
+              // ── ৩. বটম প্লে বার (LIVE ইন্ডিকেটর + টাইম ট্র্যাকিং) ──────────────
+              if (_showControls && initialized && !_isLoading)
+                Positioned(
+                  left: 0,
+                  right: _showChannelListPanel ? 320 : 0, // সাইড প্যানেল অন থাকলে বটম বার ছোট হবে
+                  bottom: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.transparent, Colors.black95],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                              color: Colors.white,
+                              size: 36,
+                            ),
+                            onPressed: _togglePlayPause,
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'LIVE',
+                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _formatDuration(controller.value.position),
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          Expanded(
+                            child: VideoProgressIndicator(
+                              controller,
+                              allowScrubbing: true,
+                              colors: const VideoProgressColors(
+                                playedColor: Colors.red,
+                                bufferedColor: Colors.white30,
+                                backgroundColor: Colors.white12,
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white30),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              appState.currentChannel.quality,
+                              style: const TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
-class _BannerCard extends StatelessWidget {
-  const _BannerCard({required this.banner, required this.theme});
+              // ── ৪. প্রিমিয়াম সার্ভার সাইড চ্যানেল লিস্ট প্যানেল (ডান পাশে আসবে) ───────
+              if (_showChannelListPanel)
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 300,
+                    color: Colors.black.withAlpha(225), // ট্রান্সপারেন্ট ব্ল্যাক ব্যাকগ্রাউন্ড
+                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            child: Text(
+                              'চ্যানেল লিস্ট (${appState.channels.length})',
+                              style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const Divider(color: Colors.white10),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: appState.channels.length,
+                            itemBuilder: (context, index) {
+                              final ch = appState.channels[index];
+                              final isCurrent = appState.currentChannelIndex == index;
 
-  final dynamic banner;
-  final ThemeData theme;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      appState.currentChannelIndex = index;
+                                      _isLoading = true;
+                                      _activeChannelId = null;
+                                    });
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: isCurrent ? Colors.red.withAlpha(50) : Colors.white.withAlpha(10),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isCurrent ? Colors.red : Colors.transparent,
+                                        width: 1.5
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // ── সার্ভার চ্যানেল লোগো নেটওয়ার্ক ইমেজ ──
+                                        Container(
+                                          width: 45,
+                                          height: 30,
+                                          decoration: BoxDecoration(
+                                            color: Colors.black45,
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Image.network(
+                                              ch.logoUrl ?? '', // সার্ভার থেকে আসা লোগো প্রোপার্টি (প্রয়োজনে মডেল অনুযায়ী নাম পরিবর্তন করুন)
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                // কোনো কারণে লোগো না পেলে ডিফল্ট আইকন দেখাবে
+                                                return const Icon(Icons.live_tv, color: Colors.white38, size: 18);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        // ── চ্যানেলের নাম ──
+                                        Expanded(
+                                          child: Text(
+                                            ch.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isCurrent)
+                                          const Icon(Icons.play_arrow_rounded, color: Colors.red, size: 20),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          colors: [theme.colorScheme.primary, const Color(0xFF0F172A)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            banner.title as String,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
+              // ── ৫. ইনফো টোস্ট ───────────────────────────────────────────
+              if (appState.showToast)
+                Positioned(
+                  left: 24,
+                  bottom: 80,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      appState.toastMessage,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            banner.subtitle as String,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.white70,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Section header ────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context)
-          .textTheme
-          .titleMedium
-          ?.copyWith(fontWeight: FontWeight.bold), // ফিক্সড: নাল সেফটি নিশ্চিত করতে ?. ব্যবহার করা হয়েছে
-    );
-  }
-}
-
-// ── Error view ────────────────────────────────────────────────────────────────
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.wifi_off_rounded, size: 64, color: Colors.grey),
-            const SizedBox(height: 16),
-            Text(
-              'Could not load channels',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
         ),
       ),
     );
