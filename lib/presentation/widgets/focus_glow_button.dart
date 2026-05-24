@@ -1,6 +1,8 @@
+// lib/presentation/widgets/focus_glow_button.dart
+
 import 'package:flutter/material.dart';
 
-class FocusGlowButton extends StatelessWidget {
+class FocusGlowButton extends StatefulWidget {
   const FocusGlowButton({
     super.key,
     required this.label,
@@ -17,51 +19,69 @@ class FocusGlowButton extends StatelessWidget {
   final bool selected;
 
   @override
+  State<FocusGlowButton> createState() => _FocusGlowButtonState();
+}
+
+class _FocusGlowButtonState extends State<FocusGlowButton> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final active = widget.selected || _focused;
 
-    return FocusableActionDetector(
-      mouseCursor: SystemMouseCursors.click,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        decoration: BoxDecoration(
-          color: selected ? theme.colorScheme.primary.withOpacity(0.1) : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: selected ? theme.colorScheme.primary : Colors.white.withOpacity(0.1),
-            width: selected ? 2 : 1,
-          ),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withOpacity(0.35),
-                    blurRadius: 22,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : null,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
+    return Focus(
+      onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: active
+                ? theme.colorScheme.primary.withAlpha(26)
+                : theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 18),
-              child: Row(
-                children: [
-                  Icon(icon, color: theme.colorScheme.primary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+            border: Border.all(
+              color: active
+                  ? theme.colorScheme.primary
+                  : Colors.white.withAlpha(26),
+              width: active ? 2 : 1,
+            ),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: theme.colorScheme.primary.withAlpha(89),
+                      blurRadius: 22,
+                      spreadRadius: 1,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: widget.onTap,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 18,
+                ),
+                child: Row(
+                  children: [
+                    Icon(widget.icon, color: theme.colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        widget.label,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  if (trailing != null) trailing!,
-                ],
+                    if (widget.trailing != null) widget.trailing!,
+                  ],
+                ),
               ),
             ),
           ),
