@@ -23,7 +23,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    // মোবাইল ডিভাইসে ফুলস্ক্রিন এবং ল্যান্ডস্কেপ মোড অন করার জন্য
+    // মোবাইল ডিভাইসে স্ট্যাটাস বার হাইড করা এবং ল্যান্ডস্কেপ মোড লক করার জন্য
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -46,7 +46,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await newController.initialize();
       await newController.play();
       
-      // ভিডিও প্লে হওয়া অবস্থায় প্রোগ্রেস বার আপডেট রাখার জন্য লিসেনার
+      // টাইম সিক বার রিয়েল-টাইমে আপডেট রাখার জন্য লিসেনার
       newController.addListener(() {
         if (mounted) setState(() {});
       });
@@ -91,7 +91,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _exitPlayer() {
-    // প্লেয়ার থেকে বের হওয়ার সময় ওরিয়েন্টেশন আগের অবস্থায় ফিরিয়ে নেওয়া
+    // প্লেয়ার থেকে বের হওয়ার সময় মোবাইল স্ক্রিন আগের পোর্টেট অবস্থায় ফিরিয়ে নেওয়া
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -118,6 +118,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
+    // বাহ্যিক কোনো কারণে (যেমন TV Remote) চ্যানেল চেঞ্জ হলে রিলোড হবে
     if (_activeChannelId != null &&
         _activeChannelId != appState.currentChannel.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
@@ -150,7 +151,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
 
-              // ── ২. টপ বার (চ্যানেল নেম ও ক্লোজ বাটন) ──────────────────────────
+              // ── ২. টপ বার (চ্যানেল ইনফো ও ক্লোজ বাটন) ────────────────────────
               if (_showControls)
                 Positioned(
                   left: 0,
@@ -159,8 +160,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: SafeArea(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      backgroundBlendMode: BlendMode.darken,
-                      color: Colors.black34,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withAlpha(86), // সঠিক কালার অপাসিটি
+                        backgroundBlendMode: BlendMode.darken,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -192,30 +195,50 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৩. মেন্টাল/সেন্টার প্লে-পজ বাটন ও মোবাইল কন্ট্রোলার ──────────────────
+              // ── ৩. সেন্টার কন্ট্রোলস (চ্যানেল সুইচ < > এবং প্লে-পজ) ─────────────────
               if (_showControls)
                 Center(
-                  child: GestureDetector(
-                    onTap: _togglePlayPause,
-                    child: Container(
-                      width: 65,
-                      height: 65,
-                      decoration: const BoxDecoration(
-                        color: Colors.black54,
-                        shape: BoxShape.circle,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // আগের চ্যানেল বাটন (<)
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 32),
+                        onPressed: () => appState.switchChannel(-1),
                       ),
-                      child: Icon(
-                        initialized && controller.value.isPlaying
-                            ? Icons.pause
-                            : Icons.play_arrow,
-                        color: Colors.white,
-                        size: 40,
+                      const SizedBox(width: 40),
+                      
+                      // প্লে / পজ বাটন
+                      GestureDetector(
+                        onTap: _togglePlayPause,
+                        child: Container(
+                          width: 65,
+                          height: 65,
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            initialized && controller.value.isPlaying
+                                ? Icons.pause
+                                : Icons.play_arrow,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 40),
+
+                      // পরের চ্যানেল বাটন (>)
+                      IconButton(
+                        icon: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 32),
+                        onPressed: () => appState.switchChannel(1),
+                      ),
+                    ],
                   ),
                 ),
 
-              // ── ৪. মোবাইল স্পেসিফিক বটম কন্ট্রোল বার (প্রোগ্রেস বার সহ) ─────────────
+              // ── ৪. মোবাইল বটম কন্ট্রোল বার (টাইম ও প্রোগ্রেস বার) ──────────────────
               if (_showControls && initialized)
                 Positioned(
                   left: 0,
@@ -228,7 +251,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       top: false,
                       child: Row(
                         children: [
-                          // প্লে/পজ বাটন
                           IconButton(
                             icon: Icon(
                               controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
@@ -236,18 +258,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             onPressed: _togglePlayPause,
                           ),
-                          
-                          // কারেন্ট টাইম
                           Text(
                             _formatDuration(controller.value.position),
                             style: const TextStyle(color: Colors.white, fontSize: 12),
                           ),
-                          
-                          // ভিডিও প্রোগ্রেস বার (সিক বার)
                           Expanded(
                             child: VideoProgressIndicator(
                               controller,
-                              allowScrubbing: true, // টেনে আগে পিছে নেওয়ার অপশন
+                              allowScrubbing: true, // টেনে আগে-পিছে করার অপশন
                               colors: const VideoProgressColors(
                                 playedColor: Colors.red,
                                 bufferedColor: Colors.white24,
@@ -256,8 +274,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             ),
                           ),
-                          
-                          // টোটাল টাইম
                           Text(
                             _formatDuration(controller.value.duration),
                             style: const TextStyle(color: Colors.white, fontSize: 12),
@@ -272,7 +288,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               Positioned(
                 left: 24,
                 right: 24,
-                bottom: _showControls ? 70 : 24, // কন্ট্রোলার থাকলে একটু ওপরে উঠবে
+                bottom: _showControls ? 70 : 24, // কন্ট্রোলার অন থাকলে টোস্ট একটু ওপরে দেখাবে
                 child: AnimatedOpacity(
                   opacity: appState.showToast ? 1 : 0,
                   duration: const Duration(milliseconds: 200),
