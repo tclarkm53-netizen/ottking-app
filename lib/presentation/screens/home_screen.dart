@@ -20,7 +20,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String? _activeChannelId;
   bool _showControls = true;
   bool _isLoading = false;
-  bool _showChannelListPanel = false; // সাইড চ্যানেল লিস্ট প্যানেল অন/অফ ট্র্যাকিং
+  bool _showChannelListPanel = false; 
 
   @override
   void initState() {
@@ -34,6 +34,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initController() async {
+    if (!mounted) return;
+    
+    // read ব্যবহার করা হয়েছে বিল্ড এরর এড়াতে
     final appState = context.read<AppState>();
     final channel = appState.currentChannel;
 
@@ -93,6 +96,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  // প্রোভাইডার সেটার অ্যাকশনকে মাইক্রোপ্রসেস বা মাইক্রোটাাস্ক সেফ জোনে নেওয়া হয়েছে
+  void _onChannelSelected(AppState appState, int index) {
+    setState(() {
+      _isLoading = true;
+      _activeChannelId = null;
+      _showChannelListPanel = false; // ওটিটি ইউজার এক্সপেরিয়েন্সের জন্য চ্যানেল সিলেক্ট হলে প্যানেল হাইড হবে
+    });
+    
+    // WidgetsBinding বা Microtask দিয়ে মেইন থ্রেড ফ্রী করে প্রোভাইডার আপডেট করা হলো
+    Future.microtask(() {
+      appState.switchChannelTo(index); // AppState-এ switchChannelTo(int index) মেথডটি ব্যবহার করা বেস্ট প্র্যাকটিস
+    });
+  }
+
   void _safeChannelSwitch(AppState appState, int direction) {
     setState(() {
       _isLoading = false;
@@ -104,7 +121,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _handleKey(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
     
-    // রিমোটের রাইট বা লেফট বাটন চাপলে সাইড চ্যানেল প্যানেল ওপেন/ক্লোজ হবে
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       setState(() => _showChannelListPanel = true);
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
@@ -160,6 +176,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
+    // ফাস্ট চ্যানেল জেনারেট ট্র্যাকিং এরর হ্যান্ডলিং
     if (_activeChannelId != null &&
         _activeChannelId != appState.currentChannel.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
@@ -178,7 +195,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onTap: () {
             setState(() {
               _showControls = !_showControls;
-              // কন্ট্রোলস হাইড হলে সাইড প্যানেলও অটো হাইড হবে
               if (!_showControls) _showChannelListPanel = false;
             });
           },
@@ -229,6 +245,222 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               ),
                               const SizedBox(width: 8),
                               Text(
+                                appState.currentChannel.name,
+                                style: const TextStyle(
+                                  color: Colors.white, 
+                                  fontSize: 18, 
+                                  fontWeight: FontWeight.bold
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              _showChannelListPanel ? Icons.featured_play_list : Icons.featured_play_list_outlined, 
+                              color: Colors.white
+                            ),
+                            onPressed: () {
+                              setState(() => _showChannelListPanel = !_showChannelListPanel);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ── ৩. বটম প্লে বার (LIVE ইন্ডিকেটর + টাইম ট্র্যাকিং) ──────────────
+              if (_showControls && initialized && !_isLoading)
+                Positioned(
+                  left: 0,
+                  right: _showChannelListPanel ? 320 : 0, 
+                  bottom: 0,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.transparent, Colors.black.withAlpha(242)], 
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                              color: Colors.white,
+                              size: 36,
+                            ),
+                            onPressed: _togglePlayPause,
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'LIVE',
+                              style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _formatDuration(controller.value.position),
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          Expanded(
+                            child: VideoProgressIndicator(
+                              controller,
+                              allowScrubbing: true,
+                              colors: const VideoProgressColors(
+                                playedColor: Colors.red,
+                                bufferedColor: Colors.white30,
+                                backgroundColor: Colors.white12,
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white30),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              appState.currentChannel.quality,
+                              style: const TextStyle(color: Colors.white, fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              // ── ৪. প্রিমিয়াম সার্ভার সাইড চ্যানেল লিস্ট প্যানেল ───────
+              if (_showChannelListPanel)
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 300,
+                    color: Colors.black.withAlpha(225), 
+                    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            child: Text(
+                              'চ্যানেল লিস্ট (${appState.channels.length})',
+                              style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const Divider(color: Colors.white10),
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: appState.channels.length,
+                            itemBuilder: (context, index) {
+                              final ch = appState.channels[index];
+                              final isCurrent = appState.currentChannelIndex == index;
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: InkWell(
+                                  onTap: () => _onChannelSelected(appState, index), // ফিক্সড মেথড কল
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: isCurrent ? Colors.red.withAlpha(50) : Colors.white.withAlpha(10),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: isCurrent ? Colors.red : Colors.transparent,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 45,
+                                          height: 30,
+                                          decoration: BoxDecoration(
+                                            color: Colors.black45,
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Image.network(
+                                              ch.logoUrl ?? '', 
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return const Icon(Icons.live_tv, color: Colors.white38, size: 18);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            ch.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 14,
+                                              fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                            ),
+                                          ),
+                                        ),
+                                        if (isCurrent)
+                                          const Icon(Icons.play_arrow_rounded, color: Colors.red, size: 20),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // ── ৫. INFO TOAST ──
+              if (appState.showToast)
+                Positioned(
+                  left: 24,
+                  bottom: 80,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      appState.toastMessage,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}                              Text(
                                 appState.currentChannel.name,
                                 style: const TextStyle(
                                   color: Colors.white, 
