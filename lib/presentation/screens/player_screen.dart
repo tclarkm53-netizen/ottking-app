@@ -36,12 +36,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final appState = context.read<AppState>();
     final channel = appState.currentChannel;
 
-    if (_activeChannelId == channel.id || _isLoading) return;
+    // একই চ্যানেল অলরেডি একটিভ থাকলে পুনরায় লোড করার প্রয়োজন নেই
+    if (_activeChannelId == channel.id) return;
 
     setState(() {
       _isLoading = true;
+      _activeChannelId = channel.id; // শুরুতেই আইডি ট্র্যাক করে লক করা হচ্ছে
     });
 
+    // আগের কোনো কন্ট্রোলার রানিং থাকলে তা প্রফেশনাল উপায়ে ডিসপোজ করা হচ্ছে
     if (_controller != null) {
       final oldCtrl = _controller!;
       _controller = null;
@@ -55,6 +58,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
 
     try {
+      // ৩ সেকেন্ডের একটি কানেকশন টাইম-আউট বা সেফটি বাউন্ডারি মেইনটেইন করা ভালো
       await newController.initialize();
       
       if (!mounted) {
@@ -70,7 +74,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       setState(() {
         _controller = newController;
-        _activeChannelId = channel.id;
         _isLoading = false;
       });
     } catch (e) {
@@ -78,16 +81,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _activeChannelId = null; // অফলাইন লিংকের কারণে ফেইল করলে লক রিলিজ করা হলো
         });
+        
+        // ইউজার ফ্রেন্ডলি নোটিফিকেশন টোস্ট বা স্নাকবার
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('চ্যানেলটি লোড করা সম্ভব হয়নি। আবার চেষ্টা করুন।')),
+          SnackBar(
+            content: Text('${channel.name} চ্যানেলটি বর্তমানে অফলাইন আছে। পরবর্তী চ্যানেল চেষ্টা করুন।'),
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     }
   }
 
+  // ফিক্সড মেথড: চ্যানেল অফলাইন বা লোডিং অবস্হায় থাকলেও নেক্সট/প্রিভিয়াস চ্যানেলে যাওয়া যাবে
   void _safeChannelSwitch(AppState appState, int direction) {
-    if (_isLoading) return;
+    setState(() {
+      _isLoading = false;    // নতুন ইনপুট নেওয়া সচল করতে লোডিং রিলিজ করা হলো
+      _activeChannelId = null; // সোর্স আইডি ক্লিয়ার করা হলো যাতে নতুন চ্যানেল ট্রিগার হয়
+    });
     appState.switchChannel(direction);
   }
 
@@ -141,8 +155,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
+    // স্টেট ম্যানেজমেন্ট থেকে কারেন্ট আইডি ট্র্যাকিং ফিক্স
     if (_activeChannelId != null &&
-        _activeChannelId != appState.currentChannel.id && !_isLoading) {
+        _activeChannelId != appState.currentChannel.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
     }
 
@@ -160,11 +175,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার (XY Fit / Full Stretch) ──────────────────────
+              // ── ১. ভিডিও লেয়ার (XY Fit / Full Stretch) ──────────────────────
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
-                    fit: BoxFit.fill, // এটি ভিডিওকে জোরপূর্বক পুরো স্ক্রিনে ফিট (XY Fit) করবে
+                    fit: BoxFit.fill,
                     child: SizedBox(
                       width: controller.value.size.width,
                       height: controller.value.size.height,
@@ -228,9 +243,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.arrow_back_ios_new, 
-                          color: _isLoading ? Colors.white24 : Colors.white, 
+                          color: Colors.white, 
                           size: 32
                         ),
                         onPressed: () => _safeChannelSwitch(appState, -1),
@@ -249,16 +264,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             initialized && !_isLoading && controller.value.isPlaying
                                 ? Icons.pause
                                 : Icons.play_arrow,
-                            color: _isLoading ? Colors.white24 : Colors.white,
+                            color: Colors.white,
                             size: 40,
                           ),
                         ),
                       ),
                       const SizedBox(width: 40),
                       IconButton(
-                        icon: Icon(
+                        icon: const Icon(
                           Icons.arrow_forward_ios, 
-                          color: _isLoading ? Colors.white24 : Colors.white, 
+                          color: Colors.white, 
                           size: 32
                         ),
                         onPressed: () => _safeChannelSwitch(appState, 1),
