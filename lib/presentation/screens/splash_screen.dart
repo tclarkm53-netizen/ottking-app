@@ -1,3 +1,5 @@
+// lib/presentation/screens/splash_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -23,17 +25,16 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    Future.delayed(AppConstants.splashDuration, () {
-      if (!mounted) {
-        return;
-      }
+    Future.delayed(AppConstants.splashDuration, _navigate);
+  }
 
-      final appState = context.read<AppState>();
-      Navigator.pushReplacementNamed(
-        context,
-        appState.shouldBootToPlayer() ? '/player' : '/home',
-      );
-    });
+  void _navigate() {
+    if (!mounted) return;
+    final appState = context.read<AppState>();
+    Navigator.pushReplacementNamed(
+      context,
+      appState.shouldBootToPlayer() ? '/player' : '/home',
+    );
   }
 
   @override
@@ -58,48 +59,46 @@ class _SplashScreenState extends State<SplashScreen>
         child: Center(
           child: AnimatedBuilder(
             animation: _controller,
-            builder: (_, __) {
-              return Transform.scale(
-                scale: 0.95 + (_controller.value * 0.08),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withOpacity(0.12),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: theme.colorScheme.primary,
-                          width: 2,
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.live_tv,
-                        size: 46,
+            builder: (_, __) => Transform.scale(
+              scale: 0.95 + (_controller.value * 0.08),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withAlpha(31),
+                      shape: BoxShape.circle,
+                      border: Border.all(
                         color: theme.colorScheme.primary,
+                        width: 2,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      AppConstants.appName,
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Icon(
+                      Icons.live_tv,
+                      size: 46,
+                      color: theme.colorScheme.primary,
                     ),
-                    const SizedBox(height: 10),
-                    Text(
-                      AppConstants.appTagline,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white70,
-                      ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    AppConstants.appName,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
                     ),
-                  ],
-                ),
-              );
-            },
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    AppConstants.appTagline,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
