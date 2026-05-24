@@ -1,3 +1,5 @@
+// lib/app/app.dart
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,14 +15,14 @@ class OttKingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+    final themeMode = context.select<AppState, ThemeMode>((s) => s.themeMode);
 
     return MaterialApp(
       title: 'OTTKing',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: appState.themeMode,
+      themeMode: themeMode,
       initialRoute: '/splash',
       routes: {
         '/splash': (_) => const SplashScreen(),
