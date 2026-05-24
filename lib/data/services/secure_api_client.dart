@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -11,11 +12,18 @@ class SecureApiClient {
     required this.encryptionService,
     required this.secureStorage,
     String? baseUrl,
-  }) : _baseUrl = baseUrl ?? AppConstants.apiBaseUrl;
+  }) : _baseUrl = baseUrl ?? _defaultBaseUrl();
 
   final EncryptionService encryptionService;
   final SecureStorageService secureStorage;
   final String _baseUrl;
+
+  static String _defaultBaseUrl() {
+    if (Platform.isAndroid) {
+      return 'http://10.0.2.2:8000';
+    }
+    return AppConstants.apiBaseUrl;
+  }
 
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
     final timestamp = DateTime.now().toUtc().toIso8601String();
@@ -39,7 +47,16 @@ class SecureApiClient {
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Secure API request failed: ${response.statusCode}');
+      String errorDetails = response.body;
+      try {
+        final parsed = jsonDecode(response.body);
+        if (parsed is Map<String, dynamic> && parsed['error'] is String) {
+          errorDetails = parsed['error'] as String;
+        }
+      } catch (_) {
+        // keep raw body when JSON parsing fails
+      }
+      throw Exception('Secure API request failed: ${response.statusCode} - $errorDetails');
     }
 
     final decoded = jsonDecode(response.body) as Map<String, dynamic>;
