@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// 1. ADD YOUR CONSTANTS IMPORT HERE (Adjust the path to match your project structure)
+import 'data/constants/app_constants.dart'; 
+
 import 'app/app.dart';
 import 'data/repositories/live_tv_repository.dart';
 import 'data/services/device_mode_service.dart';
@@ -19,7 +22,7 @@ Future<void> main() async {
   final apiClient = SecureApiClient(
     encryptionService: encryptionService,
     secureStorage: secureStorage,
-    baseUrl: AppConstants.defaultApiBaseUrl,
+    baseUrl: AppConstants.defaultApiBaseUrl, // Now the compiler will recognize this!
   );
 
   final repository = LiveTvRepository(apiClient: apiClient);
