@@ -19,6 +19,7 @@ Future<void> main() async {
   final apiClient = SecureApiClient(
     encryptionService: encryptionService,
     secureStorage: secureStorage,
+    baseUrl: AppConstants.defaultApiBaseUrl,
   );
 
   final repository = LiveTvRepository(apiClient: apiClient);

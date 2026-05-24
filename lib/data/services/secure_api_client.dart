@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../core/constants/app_constants.dart';
@@ -13,27 +11,11 @@ class SecureApiClient {
     required this.encryptionService,
     required this.secureStorage,
     String? baseUrl,
-  }) : _baseUrl = baseUrl ?? _defaultBaseUrl();
+  }) : _baseUrl = baseUrl ?? AppConstants.defaultApiBaseUrl;
 
   final EncryptionService encryptionService;
   final SecureStorageService secureStorage;
   final String _baseUrl;
-
-  static String _defaultBaseUrl() {
-    if (kIsWeb) {
-      return AppConstants.defaultApiBaseUrl;
-    }
-
-    if (Platform.isAndroid) {
-      return AppConstants.localAndroidApiBaseUrl;
-    }
-
-    if (Platform.isIOS || Platform.isMacOS || Platform.isWindows || Platform.isLinux) {
-      return AppConstants.localDesktopApiBaseUrl;
-    }
-
-    return AppConstants.defaultApiBaseUrl;
-  }
 
   Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> payload) async {
     final timestamp = DateTime.now().toUtc().toIso8601String();
