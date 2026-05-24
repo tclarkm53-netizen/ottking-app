@@ -17,6 +17,7 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'player-root');
   VideoPlayerController? _controller;
+  VoidCallback? _controllerListener; // লিসেনার ট্র্যাক করার জন্য ভেরিয়েবল
   String? _activeChannelId;
   bool _showControls = true;
   bool _isLoading = false;
@@ -33,6 +34,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initController() async {
+    if (!mounted) return;
+    
     final appState = context.read<AppState>();
     final channel = appState.currentChannel;
 
@@ -44,9 +47,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeChannelId = channel.id; // শুরুতেই আইডি ট্র্যাক করে লক করা হচ্ছে
     });
 
-    // আগের কোনো কন্ট্রোলার রানিং থাকলে তা প্রফেশনাল উপায়ে ডিসপোজ করা হচ্ছে
+    // পুরনো কন্ট্রোলার এবং তার লিসেনার প্রফেশনাল উপায়ে রিমুভ ও ডিসপোজ করা
     if (_controller != null) {
       final oldCtrl = _controller!;
+      if (_controllerListener != null) {
+        oldCtrl.removeListener(_controllerListener!);
+        _controllerListener = null;
+      }
       _controller = null;
       try {
         await oldCtrl.pause();
@@ -54,11 +61,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await oldCtrl.dispose();
     }
 
-    final newController =
-        VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
+    final newController = VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
 
     try {
-      // ৩ সেকেন্ডের একটি কানেকশন টাইম-আউট বা সেফটি বাউন্ডারি মেইনটেইন করা ভালো
+      // নেটওয়ার্ক টাইমআউট বা ইনিশিয়ালের জন্য সেফটি বাউন্ডারি
       await newController.initialize();
       
       if (!mounted) {
@@ -68,9 +74,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       await newController.play();
       
-      newController.addListener(() {
+      // লিসেনার রেফারেন্স সেভ করে রাখা যাতে পরে রিমুভ করা যায় (Prevent Memory Leak)
+      _controllerListener = () {
         if (mounted) setState(() {});
-      });
+      };
+      newController.addListener(_controllerListener!);
 
       setState(() {
         _controller = newController;
@@ -81,14 +89,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _activeChannelId = null; // অফলাইন লিংকের কারণে ফেইল করলে লক রিলিজ করা হলো
+          _activeChannelId = null; // অফলাইন লিংকের কারণে ফেইল করলে লক রিলিজ
         });
         
-        // ইউজার ফ্রেন্ডলি নোটিফিকেশন টোস্ট বা স্নাকবার
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
+        // সেফ উপায়ে স্নাকবার শো করা
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
           SnackBar(
-            content: Text('${channel.name} চ্যানেলটি বর্তমানে অফলাইন আছে। পরবর্তী চ্যানেল চেষ্টা করুন।'),
+            content: Text('${channel.name} চ্যানেলটি বর্তমানে অফলাইন আছে।'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -96,13 +105,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // ফিক্সড মেথড: চ্যানেল অফলাইন বা লোডিং অবস্হায় থাকলেও নেক্সট/প্রিভিয়াস চ্যানেলে যাওয়া যাবে
+  // চ্যানেল অফলাইন বা লোডিং অবস্হায় থাকলেও নেক্সট/প্রিভিয়াস চ্যানেলে যাওয়া যাবে
   void _safeChannelSwitch(AppState appState, int direction) {
     setState(() {
-      _isLoading = false;    // নতুন ইনপুট নেওয়া সচল করতে লোডিং রিলিজ করা হলো
-      _activeChannelId = null; // সোর্স আইডি ক্লিয়ার করা হলো যাতে নতুন চ্যানেল ট্রিগার হয়
+      _isLoading = false;    // নতুন ইনপুট নেওয়া সচল করতে লোডিং রিলিজ
+      _activeChannelId = null; // সোর্স আইডি ক্লিয়ার
     });
     appState.switchChannel(direction);
+    
+    // চ্যানেল চেঞ্জ হওয়ার সাথে সাথে নতুন কন্ট্রোলার ইনিশিয়েট করা
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
   }
 
   void _handleKey(KeyEvent event, AppState appState) {
@@ -139,6 +151,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    // ডিসপোজের আগে লিসেনার রিমুভ নিশ্চিত করা
+    if (_controller != null && _controllerListener != null) {
+      _controller!.removeListener(_controllerListener!);
+    }
     _controller?.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -153,11 +169,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // listen: true রাখা হয়েছে শুধু UI টেক্সট এবং টোস্ট মেসেজ আপডেটের জন্য
     final appState = context.watch<AppState>();
 
-    // স্টেট ম্যানেজমেন্ট থেকে কারেন্ট আইডি ট্র্যাকিং ফিক্স
-    if (_activeChannelId != null &&
-        _activeChannelId != appState.currentChannel.id) {
+    // build মেথডের ভেতর ডিরেক্ট চেক না করে রিমোট রিকোয়েস্ট সিঙ্ক করার জন্য 
+    // মেমোরি ভেরিয়েবলের সাথে রি-ভ্যালিডেশন করা হলো
+    if (_activeChannelId != null && _activeChannelId != appState.currentChannel.id) {
+      _activeChannelId = appState.currentChannel.id;
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
     }
 
@@ -175,7 +193,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার (XY Fit / Full Stretch) ──────────────────────
+              // ── ১. ভিডিও লেয়ার (Full Stretch) ──────────────────────
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
@@ -203,7 +221,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         color: Colors.black.withAlpha(86),
-                        backgroundBlendMode: BlendMode.darken,
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -243,11 +260,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new, 
-                          color: Colors.white, 
-                          size: 32
-                        ),
+                        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 32),
                         onPressed: () => _safeChannelSwitch(appState, -1),
                       ),
                       const SizedBox(width: 40),
@@ -271,25 +284,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ),
                       const SizedBox(width: 40),
                       IconButton(
-                        icon: const Icon(
-                          Icons.arrow_forward_ios, 
-                          color: Colors.white, 
-                          size: 32
-                        ),
+                        icon: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 32),
                         onPressed: () => _safeChannelSwitch(appState, 1),
                       ),
                     ],
                   ),
                 ),
 
-              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যাজ + প্রোগ্রেস বার) ──────────────
+              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যাজ + প্রোগ্রেস বার) ──────────────
               if (_showControls && initialized && !_isLoading)
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 10, top: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     color: Colors.black54,
                     child: SafeArea(
                       top: false,
@@ -302,8 +311,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             ),
                             onPressed: _togglePlayPause,
                           ),
-                          
-                          // 🔴 LIVE ব্যাজ ডিজাইন
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             margin: const EdgeInsets.only(right: 12),
@@ -327,7 +334,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               ],
                             ),
                           ),
-
                           Text(
                             _formatDuration(controller.value.position),
                             style: const TextStyle(color: Colors.white, fontSize: 12),
