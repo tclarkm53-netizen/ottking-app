@@ -1,12 +1,6 @@
-class ChannelModel {
-  final String id;
-  final String name;
-  final String category;
-  final String streamUrl;
-  final String logoUrl;
-  final String description;
-  final String quality;
+// lib/data/models/channel_model.dart
 
+class ChannelModel {
   const ChannelModel({
     required this.id,
     required this.name,
@@ -17,29 +11,35 @@ class ChannelModel {
     required this.quality,
   });
 
+  final String id;
+  final String name;
+  final String category;
+  final String streamUrl;
+  final String logoUrl;
+  final String description;
+  final String quality;
+
   factory ChannelModel.fromJson(Map<String, dynamic> json) {
     return ChannelModel(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      category: json['category'] as String,
-      streamUrl: json['streamUrl'] as String,
-      logoUrl: json['logoUrl'] as String,
-      description: json['description'] as String,
-      quality: json['quality'] as String,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      category: json['category'] as String? ?? '',
+      streamUrl: json['streamUrl'] as String? ?? '',
+      logoUrl: json['logoUrl'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      quality: json['quality'] as String? ?? 'HD',
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'category': category,
-      'streamUrl': streamUrl,
-      'logoUrl': logoUrl,
-      'description': description,
-      'quality': quality,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'category': category,
+        'streamUrl': streamUrl,
+        'logoUrl': logoUrl,
+        'description': description,
+        'quality': quality,
+      };
 }
 
 class CategoryModel {
@@ -50,8 +50,8 @@ class CategoryModel {
 
   factory CategoryModel.fromJson(Map<String, dynamic> json) {
     return CategoryModel(
-      name: json['name'] as String,
-      icon: json['icon'] as String,
+      name: json['name'] as String? ?? '',
+      icon: json['icon'] as String? ?? '📺',
     );
   }
 }
@@ -71,10 +71,10 @@ class BannerModel {
 
   factory BannerModel.fromJson(Map<String, dynamic> json) {
     return BannerModel(
-      title: json['title'] as String,
-      subtitle: json['subtitle'] as String,
-      imageUrl: json['imageUrl'] as String,
-      channelId: json['channelId'] as String,
+      title: json['title'] as String? ?? '',
+      subtitle: json['subtitle'] as String? ?? '',
+      imageUrl: json['imageUrl'] as String? ?? '',
+      channelId: json['channelId'] as String? ?? '',
     );
   }
 }
@@ -96,11 +96,11 @@ class SubscriptionPlanModel {
 
   factory SubscriptionPlanModel.fromJson(Map<String, dynamic> json) {
     return SubscriptionPlanModel(
-      name: json['name'] as String,
-      price: json['price'] as String,
-      description: json['description'] as String,
-      badge: json['badge'] as String,
-      features: List<String>.from(json['features'] as List<dynamic>),
+      name: json['name'] as String? ?? '',
+      price: json['price'] as String? ?? '',
+      description: json['description'] as String? ?? '',
+      badge: json['badge'] as String? ?? '',
+      features: List<String>.from((json['features'] as List<dynamic>?) ?? []),
     );
   }
 }
@@ -115,8 +115,8 @@ class UserProfileModel {
 
   factory UserProfileModel.fromJson(Map<String, dynamic> json) {
     return UserProfileModel(
-      email: json['email'] as String,
-      plan: json['plan'] as String,
+      email: json['email'] as String? ?? '',
+      plan: json['plan'] as String? ?? 'Free',
     );
   }
 }
@@ -136,17 +136,17 @@ class ChannelCatalogModel {
 
   factory ChannelCatalogModel.fromJson(Map<String, dynamic> json) {
     return ChannelCatalogModel(
-      channels: (json['channels'] as List<dynamic>)
-          .map((item) => ChannelModel.fromJson(item as Map<String, dynamic>))
+      channels: (json['channels'] as List<dynamic>? ?? [])
+          .map((e) => ChannelModel.fromJson(e as Map<String, dynamic>))
           .toList(),
-      categories: (json['categories'] as List<dynamic>)
-          .map((item) => CategoryModel.fromJson(item as Map<String, dynamic>))
+      categories: (json['categories'] as List<dynamic>? ?? [])
+          .map((e) => CategoryModel.fromJson(e as Map<String, dynamic>))
           .toList(),
-      banners: (json['banners'] as List<dynamic>)
-          .map((item) => BannerModel.fromJson(item as Map<String, dynamic>))
+      banners: (json['banners'] as List<dynamic>? ?? [])
+          .map((e) => BannerModel.fromJson(e as Map<String, dynamic>))
           .toList(),
-      plans: (json['plans'] as List<dynamic>)
-          .map((item) => SubscriptionPlanModel.fromJson(item as Map<String, dynamic>))
+      plans: (json['plans'] as List<dynamic>? ?? [])
+          .map((e) => SubscriptionPlanModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
