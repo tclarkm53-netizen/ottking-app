@@ -1,8 +1,11 @@
+// lib/presentation/providers/app_state.dart
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../data/models/channel_model.dart';
 import '../../data/repositories/live_tv_repository.dart';
 import '../../data/services/device_mode_service.dart';
@@ -21,6 +24,8 @@ class AppState extends ChangeNotifier {
   final SecureStorageService secureStorage;
   final DeviceModeService deviceModeService;
 
+  // ── State ─────────────────────────────────────────────────────────────────
+
   bool isLoading = true;
   bool isSmartTv = false;
   bool bootToPlayer = false;
@@ -32,12 +37,25 @@ class AppState extends ChangeNotifier {
   List<BannerModel> banners = [];
   List<SubscriptionPlanModel> plans = [];
 
-  int currentChannelIndex = 0;
+  int _currentChannelIndex = 0;
+  int get currentChannelIndex => _currentChannelIndex;
+
+  /// Directly sets the active channel index (used by HomeScreen grid tap).
+  set currentChannelIndex(int value) {
+    if (channels.isEmpty) return;
+    _currentChannelIndex = value.clamp(0, channels.length - 1);
+    notifyListeners();
+  }
+
   bool showToast = false;
   String toastMessage = '';
+
   UserProfileModel? userProfile;
   bool isAuthenticated = false;
-  bool showAuthDialog = false;
+
+  Timer? _toastTimer;
+
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
 
   Future<void> bootstrap() async {
     isSmartTv = deviceModeService.isSmartTv();
@@ -54,6 +72,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Catalog ───────────────────────────────────────────────────────────────
+
   Future<void> loadCatalog() async {
     try {
       final catalog = await repository.fetchCatalog();
@@ -61,25 +81,33 @@ class AppState extends ChangeNotifier {
       categories = catalog.categories;
       banners = catalog.banners;
       plans = catalog.plans;
-      if (channels.isNotEmpty && currentChannelIndex >= channels.length) {
-        currentChannelIndex = 0;
+      if (_currentChannelIndex >= channels.length) {
+        _currentChannelIndex = 0;
       }
       errorMessage = '';
-    } catch (error) {
+    } catch (e) {
       channels = [];
       categories = [];
       banners = [];
       plans = [];
-      errorMessage = error.toString();
+      errorMessage = e.toString();
     }
     notifyListeners();
   }
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+
   void toggleTheme() {
-    themeMode = themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    prefs.setString('themeMode', themeMode == ThemeMode.light ? 'light' : 'dark');
+    themeMode =
+        themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    prefs.setString(
+      'themeMode',
+      themeMode == ThemeMode.light ? 'light' : 'dark',
+    );
     notifyListeners();
   }
+
+  // ── Smart TV boot ─────────────────────────────────────────────────────────
 
   Future<void> setBootToPlayer(bool enabled) async {
     bootToPlayer = enabled;
@@ -87,31 +115,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleAuthDialog() {
-    showAuthDialog = !showAuthDialog;
-    notifyListeners();
-  }
+  bool shouldBootToPlayer() =>
+      isSmartTv && bootToPlayer && channels.isNotEmpty;
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
 
   Future<void> login(String email, String password) async {
     errorMessage = '';
     notifyListeners();
-
     try {
-      final response = await repository.authenticate(email, password);
-      final token = response['token'] as String? ?? 'demo-token';
-      final profile = UserProfileModel.fromJson(
-        {
-          'email': response['email'] as String? ?? email,
-          'plan': response['plan'] as String? ?? 'Premium',
-        },
-      );
-      await secureStorage.saveAuthToken(token);
-      await secureStorage.saveUserProfile(profile);
-      userProfile = profile;
-      isAuthenticated = true;
-      errorMessage = '';
-    } catch (error) {
-      errorMessage = error.toString();
+      final res = await repository.authenticate(email, password);
+      await _handleAuthResponse(res, email);
+    } catch (e) {
+      errorMessage = e.toString();
     }
     notifyListeners();
   }
@@ -119,25 +135,29 @@ class AppState extends ChangeNotifier {
   Future<void> register(String email, String password) async {
     errorMessage = '';
     notifyListeners();
-
     try {
-      final response = await repository.register(email, password);
-      final token = response['token'] as String? ?? 'demo-token';
-      final profile = UserProfileModel.fromJson(
-        {
-          'email': response['email'] as String? ?? email,
-          'plan': response['plan'] as String? ?? 'Premium',
-        },
-      );
-      await secureStorage.saveAuthToken(token);
-      await secureStorage.saveUserProfile(profile);
-      userProfile = profile;
-      isAuthenticated = true;
-      errorMessage = '';
-    } catch (error) {
-      errorMessage = error.toString();
+      final res = await repository.register(email, password);
+      await _handleAuthResponse(res, email);
+    } catch (e) {
+      errorMessage = e.toString();
     }
     notifyListeners();
+  }
+
+  Future<void> _handleAuthResponse(
+    Map<String, dynamic> res,
+    String fallbackEmail,
+  ) async {
+    final token = res['token'] as String? ?? 'demo-token';
+    final profile = UserProfileModel(
+      email: res['email'] as String? ?? fallbackEmail,
+      plan: res['plan'] as String? ?? 'Premium',
+    );
+    await secureStorage.saveAuthToken(token);
+    await secureStorage.saveUserProfile(profile);
+    userProfile = profile;
+    isAuthenticated = true;
+    errorMessage = '';
   }
 
   Future<void> logout() async {
@@ -147,42 +167,54 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Channel switching ─────────────────────────────────────────────────────
+
   void switchChannel(int direction) {
-    if (channels.isEmpty) {
-      return;
+    if (channels.isEmpty) return;
+
+    _currentChannelIndex =
+        (_currentChannelIndex + direction) % channels.length;
+    if (_currentChannelIndex < 0) {
+      _currentChannelIndex = channels.length - 1;
     }
 
-    currentChannelIndex = (currentChannelIndex + direction) % channels.length;
-    if (currentChannelIndex < 0) {
-      currentChannelIndex = channels.length - 1;
-    }
+    _showChannelToast(channels[_currentChannelIndex].name);
+  }
 
-    toastMessage = 'Now playing ${channels[currentChannelIndex].name}';
+  void _showChannelToast(String channelName) {
+    toastMessage = 'Now playing $channelName';
     showToast = true;
     notifyListeners();
 
-    Timer(const Duration(seconds: 3), () {
+    _toastTimer?.cancel();
+    _toastTimer = Timer(AppConstants.toastDuration, () {
       showToast = false;
       notifyListeners();
     });
   }
 
-  bool shouldBootToPlayer() {
-    return isSmartTv && bootToPlayer && channels.isNotEmpty;
-  }
+  // ── Current channel ───────────────────────────────────────────────────────
 
-  ChannelModel get currentChannel => channels.isEmpty
-      ? ChannelModel(
-          id: 'fallback',
-          name: 'Live Preview',
-          category: 'Preview',
-          streamUrl:
-              'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
-          logoUrl: '',
-          description: 'Secure preview channel',
-          quality: 'HD',
-        )
-      : channels[currentChannelIndex];
+  static final ChannelModel _fallbackChannel = ChannelModel(
+    id: 'fallback',
+    name: 'Live Preview',
+    category: 'Preview',
+    streamUrl: AppConstants.fallbackStreamUrl,
+    logoUrl: '',
+    description: 'Secure preview channel',
+    quality: 'HD',
+  );
+
+  ChannelModel get currentChannel =>
+      channels.isEmpty ? _fallbackChannel : channels[_currentChannelIndex];
 
   String get currentChannelName => currentChannel.name;
+
+  // ── Dispose ───────────────────────────────────────────────────────────────
+
+  @override
+  void dispose() {
+    _toastTimer?.cancel();
+    super.dispose();
+  }
 }
