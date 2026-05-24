@@ -1,3 +1,5 @@
+// lib/core/theme/app_theme.dart
+
 import 'package:flutter/material.dart';
 
 class AppTheme {
@@ -8,6 +10,7 @@ class AppTheme {
   static const Color surfaceDark = Color(0xFF11152A);
   static const Color surfaceLight = Color(0xFFFFFFFF);
   static const Color accent = Color(0xFF8B5CF6);
+  static const Color accentCyan = Color(0xFF22D3EE);
   static const Color success = Color(0xFF34D399);
   static const Color warning = Color(0xFFF59E0B);
   static const Color danger = Color(0xFFF87171);
@@ -16,16 +19,25 @@ class AppTheme {
     useMaterial3: true,
     brightness: Brightness.dark,
     scaffoldBackgroundColor: backgroundDark,
-    colorScheme: ColorScheme.dark(
+    colorScheme: const ColorScheme.dark(
       primary: accent,
-      secondary: const Color(0xFF22D3EE),
+      secondary: accentCyan,
       surface: surfaceDark,
-      background: backgroundDark,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      filled: true,
+      fillColor: Colors.white10,
     ),
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.transparent,
       elevation: 0,
       foregroundColor: Colors.white,
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: surfaceDark,
+      labelStyle: const TextStyle(color: Colors.white70),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
 
@@ -33,16 +45,24 @@ class AppTheme {
     useMaterial3: true,
     brightness: Brightness.light,
     scaffoldBackgroundColor: backgroundLight,
-    colorScheme: ColorScheme.light(
+    colorScheme: const ColorScheme.light(
       primary: accent,
-      secondary: const Color(0xFF0F172A),
+      secondary: Color(0xFF0F172A),
       surface: surfaceLight,
-      background: backgroundLight,
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      filled: true,
+      fillColor: Colors.black.withAlpha(13),
     ),
     appBarTheme: const AppBarTheme(
       backgroundColor: Colors.transparent,
       elevation: 0,
       foregroundColor: Color(0xFF0F172A),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
 }
