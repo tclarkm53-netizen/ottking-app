@@ -1,6 +1,6 @@
 plugins {
     id "com.android.application"
-    id "kotlin-android"
+    id "org.jetbrains.kotlin.android" // কটলিনের নতুন নিয়ম অনুযায়ী আপডেট করা হয়েছে
     id "dev.flutter.flutter-gradle-plugin"
 }
 
