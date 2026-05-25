@@ -26,8 +26,58 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _handleKey(KeyEvent event, AppState appState, BuildContext context) {
+  // ── এক্সিট কনফার্মেশন ডায়ালগ পপ-আপ ──
+  Future<bool> _showExitConfirmationDialog(BuildContext context) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B), // ডার্ক ব্লু-স্লেট ব্যাকগ্রাউন্ড
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.4), width: 1.5), // সায়ান বর্ডার
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.exit_to_app_rounded, color: Color(0xFF06B6D4)),
+            SizedBox(width: 10),
+            Text('অ্যাপ বন্ধ করুন', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'আপনি কি নিশ্চিতভাবে অ্যাপ্লিকেশনটি বন্ধ করতে চান?',
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          // 'না' বাটন
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white60,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            ),
+            child: const Text('না', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          // 'হ্যাঁ' বাটন (নিওন সায়ান ফিল্ড)
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF06B6D4),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('হ্যাঁ', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
+  void _handleKey(KeyEvent event, AppState appState, BuildContext context) async {
     if (event is! KeyDownEvent) return;
+    
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       FocusScope.of(context).nextFocus();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -36,6 +86,13 @@ class _HomeScreenState extends State<HomeScreen> {
       appState.switchChannel(1);
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       appState.switchChannel(-1);
+    } else if (event.logicalKey == LogicalKeyboardKey.escape || 
+               event.logicalKey == LogicalKeyboardKey.goBack) {
+      // রিমোটের ব্যাক/এস্কেপ চাপলে ডায়ালগ ওপেন হবে
+      final shouldExit = await _showExitConfirmationDialog(context);
+      if (shouldExit) {
+        SystemNavigator.pop(); // অ্যাপ কিল করার অফিশিয়াল মেথড
+      }
     }
   }
 
@@ -47,48 +104,60 @@ class _HomeScreenState extends State<HomeScreen> {
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
-    return KeyboardListener(
-      focusNode: _rootFocusNode,
-      onKeyEvent: (event) => _handleKey(event, appState, context),
-      child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A), // ইমেজের মতো ডার্ক ব্যাকগ্রাউন্ড কালার
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0F172A),
-          elevation: 0,
-          title: Text(
-            AppConstants.appName,
-            style: TextStyle(fontSize: isTV ? 26 : 20, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          actions: [
-            IconButton(
-              icon: Icon(Icons.settings_outlined, size: isTV ? 30 : 24, color: Colors.white),
-              onPressed: () => Navigator.pushNamed(context, '/settings'),
+    return PopScope(
+      canPop: false, // সিস্টেমের ডিফল্ট ব্যাক অ্যাকশন ব্লক করা হলো
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        // মোবাইলের ব্যাক জেস্টার বা ইন-বিল্ট ব্যাক বাটনে ক্লিক করলে ডায়ালগ আসবে
+        final shouldExit = await _showExitConfirmationDialog(context);
+        if (shouldExit) {
+          SystemNavigator.pop();
+        }
+      },
+      child: KeyboardListener(
+        focusNode: _rootFocusNode,
+        autofocus: true, // কিবোর্ড/রিমোট লিসেনার অলওয়েজ একটিভ থাকবে
+        onKeyEvent: (event) => _handleKey(event, appState, context),
+        child: Scaffold(
+          backgroundColor: const Color(0xFF0F172A), 
+          appBar: AppBar(
+            backgroundColor: const Color(0xFF0F172A),
+            elevation: 0,
+            title: Text(
+              AppConstants.appName,
+              style: TextStyle(fontSize: isTV ? 26 : 20, fontWeight: FontWeight.bold, color: Colors.white),
             ),
-          ],
-        ),
-        body: appState.isLoading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
-                ),
-              )
-            : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
-                ? _ErrorView(
-                    message: appState.errorMessage,
-                    onRetry: appState.loadCatalog,
-                  )
-                : _HomeBody(
-                    appState: appState,
-                    theme: theme,
-                    pageController: _pageController,
-                    isTV: isTV,
+            actions: [
+              IconButton(
+                icon: Icon(Icons.settings_outlined, size: isTV ? 30 : 24, color: Colors.white),
+                onPressed: () => Navigator.pushNamed(context, '/settings'),
+              ),
+            ],
+          ),
+          body: appState.isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
                   ),
+                )
+              : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
+                  ? _ErrorView(
+                      message: appState.errorMessage,
+                      onRetry: appState.loadCatalog,
+                    )
+                  : _HomeBody(
+                      appState: appState,
+                      theme: theme,
+                      pageController: _pageController,
+                      isTV: isTV,
+                    ),
+        ),
       ),
     );
   }
 }
 
-// ── Body (Sliver Layout) ───────────────────────────────────────────────────────
+// ── Body (Sliver Layout with Optimized Grid) ───────────────────────────────────
 
 class _HomeBody extends StatelessWidget {
   const _HomeBody({
@@ -109,11 +178,11 @@ class _HomeBody extends StatelessWidget {
       onRefresh: appState.loadCatalog,
       child: CustomScrollView(
         slivers: [
-          // ── ১. ব্যানার সেকশন (১০০% ফুল উইডথ) ──────────────────────────────────
+          // ── ১. ব্যানার সেকশন ──────────────────────────────────
           if (appState.banners.isNotEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: isTV ? 340 : 210, // ইমেজের এ্যাসপেক্ট রেশিওর সাথে মিল রেখে হাইট
+                height: isTV ? 320 : 210, 
                 child: PageView.builder(
                   controller: pageController,
                   itemCount: appState.banners.length,
@@ -130,13 +199,13 @@ class _HomeBody extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(isTV ? 32 : 16, 24, isTV ? 32 : 16, 12),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                _SectionHeader(title: isTV ? 'এখন চলছে:' : 'লাইভ চ্যানেল', isTV: isTV),
+                _SectionHeader(title: isTV ? 'লাইভ টিভি চ্যানেলসমূহ' : 'লাইভ চ্যানেল', isTV: isTV),
                 const SizedBox(height: 8),
               ]),
             ),
           ),
 
-          // ── ৩. চ্যানেল গ্রিড সেকশন (৫:২ রেশিও এবং ওরিয়েন্টেশন মার্জিন সহ আপডেট) ───────────
+          // ── ৩. চ্যানেল গ্রিড সেকশন ──────────────────────────────────
           SliverPadding(
             padding: EdgeInsets.symmetric(horizontal: isTV ? 32 : 16),
             sliver: appState.channels.isEmpty
@@ -150,11 +219,10 @@ class _HomeBody extends StatelessWidget {
                   )
                 : SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isTV ? 4 : 2, // টিভিতে ৪ কলাম, মোবাইলে ২ কলাম
-                      mainAxisSpacing: isTV ? 18 : 14,
-                      crossAxisSpacing: isTV ? 18 : 14,
-                      // ── আপনার দেওয়া ৫:২ রেশিও অনুযায়ী childAspectRatio আপডেট (৫/২ = ২.৫) ──
-                      childAspectRatio: isTV ? 2.5 : 0.95, 
+                      crossAxisCount: isTV ? 4 : 2, 
+                      mainAxisSpacing: isTV ? 20 : 14,
+                      crossAxisSpacing: isTV ? 20 : 14,
+                      childAspectRatio: isTV ? 1.35 : 0.95, 
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -162,32 +230,39 @@ class _HomeBody extends StatelessWidget {
                         final selected = appState.currentChannelIndex == index;
                         
                         return FocusGlowButton(
-                          isTV: isTV, // বাটনকে জানানো হলো এটি কোন মোডে আছে
+                          isTV: isTV,
                           label: channel.name,
                           icon: channel.logoUrl != null && channel.logoUrl.isNotEmpty
-                              ? Image.network(
-                                  channel.logoUrl,
-                                  fit: BoxFit.contain,
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return const Center(
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.tv, size: 24, color: Colors.white30),
+                              ? AspectRatio(
+                                  aspectRatio: 16 / 9, 
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    child: Image.network(
+                                      channel.logoUrl,
+                                      fit: BoxFit.contain,
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) return child;
+                                        return const Center(
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        );
+                                      },
+                                      errorBuilder: (context, error, stackTrace) =>
+                                          const Icon(Icons.tv, size: 32, color: Colors.white30),
+                                    ),
+                                  ),
                                 )
                               : Icons.play_circle_outline,
                           selected: selected,
                           trailing: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white24),
+                              color: Colors.black38,
+                              border: Border.all(color: Colors.white12),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
-                              channel.quality.isNotEmpty ? channel.quality : 'HD',
-                              style: const TextStyle(fontSize: 10, color: Colors.white60),
+                              channel.quality.isNotEmpty ? channel.quality.toUpperCase() : 'HD',
+                              style: const TextStyle(fontSize: 10, color: Colors.white60, fontWeight: FontWeight.bold),
                             ),
                           ),
                           onTap: () {
@@ -200,7 +275,7 @@ class _HomeBody extends StatelessWidget {
                     ),
                   ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );
@@ -289,7 +364,8 @@ class _SectionHeader extends StatelessWidget {
       style: TextStyle(
         fontWeight: FontWeight.bold,
         color: Colors.white,
-        fontSize: isTV ? 20 : 16,
+        fontSize: isTV ? 22 : 16,
+        letterSpacing: 0.5,
       ),
     );
   }
@@ -315,7 +391,7 @@ class _ErrorView extends StatelessWidget {
             const SizedBox(height: 16),
             const Text('Could not load channels', style: TextStyle(color: Colors.white)),
             const SizedBox(height: 8),
-            Text('No Internet Access or api mismass', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
+            Text('No Internet Access or api mismatch', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onRetry,
