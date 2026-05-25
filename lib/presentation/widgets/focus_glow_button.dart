@@ -6,14 +6,14 @@ class FocusGlowButton extends StatefulWidget {
   const FocusGlowButton({
     super.key,
     required this.label,
-    required this.icon,
+    required this.icon, // এটি এখন IconData অথবা Widget দুটাই নিতে পারবে
     required this.onTap,
     this.trailing,
     this.selected = false,
   });
 
   final String label;
-  final IconData icon;
+  final dynamic icon; // IconData এবং Widget দুইটাই হ্যান্ডেল করার জন্য dynamic করা হলো
   final VoidCallback onTap;
   final Widget? trailing;
   final bool selected;
@@ -29,6 +29,20 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final active = widget.selected || _focused;
+
+    // আইকন নাকি কাস্টম ইমেজ উইজেট পাঠানো হয়েছে তা চেক করার লজিক
+    Widget iconWidget;
+    if (widget.icon is IconData) {
+      iconWidget = Icon(widget.icon as IconData, color: theme.colorScheme.primary);
+    } else if (widget.icon is Widget) {
+      iconWidget = SizedBox(
+        width: 40, // লোগোর জন্য পারফেক্ট সাইজ
+        height: 40,
+        child: widget.icon as Widget,
+      );
+    } else {
+      iconWidget = Icon(Icons.play_circle_outline, color: theme.colorScheme.primary);
+    }
 
     return Focus(
       onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
@@ -69,7 +83,8 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
                 ),
                 child: Row(
                   children: [
-                    Icon(widget.icon, color: theme.colorScheme.primary),
+                    // এখানে আমাদের প্রিপেয়ার্ড আইকন/লোগো উইজেটটি বসানো হলো
+                    iconWidget,
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
