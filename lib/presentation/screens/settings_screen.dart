@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
+
 import '../../data/models/channel_model.dart'; // Note: Keeping your dynamic subscription types intact
 import '../providers/app_state.dart';
 import '../widgets/focus_glow_button.dart';
@@ -154,12 +154,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     isTV: isTV,
                     label: isTV ? 'কাস্টমার সাপোর্ট' : 'Contact Support',
                     icon: Icons.headset_mic_outlined,
-                    onTap: () async {
-  										final Uri url = Uri.parse("https://ottking.top/");
-
-  											await launchUrl(url,mode: LaunchMode.externalApplication,
-  										);
-												},
+                    onTap: () {
+                      appState.loadCatalog();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Refreshing catalog…')),
+                      );
+                    },
                   ),
                 ],
               ),
