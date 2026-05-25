@@ -36,7 +36,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
 
-    // রেসপনসিভ টিভি মোড ডিটেকশন 
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
@@ -44,7 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       focusNode: _focusNode,
       onKeyEvent: _handleKey,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0B0F19), // ওটিটি প্রিমিয়াম ডিপ ডার্ক ব্যাকগ্রাউন্ড
+        backgroundColor: const Color(0xFF0B0F19),
         appBar: AppBar(
           backgroundColor: const Color(0xFF0B0F19),
           elevation: 0,
@@ -72,7 +71,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── ১. অ্যাকাউন্ট সেকশন (Account & Access) ─────────────────────
               if (appState.isAuthenticated && appState.userProfile != null) ...[
                 _SectionTitle(title: isTV ? 'অ্যাকাউন্ট এবং অ্যাক্সেস' : 'Account & Access', isTV: isTV),
                 const SizedBox(height: 14),
@@ -80,7 +78,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 24),
               ],
 
-              // ── ২. সাধারণ সেটিংস (General) ──────────────────────────────────
               _SectionTitle(title: isTV ? 'সাধারণ সেটিংস' : 'General Settings', isTV: isTV),
               const SizedBox(height: 12),
               _buildGridOrColumn(
@@ -128,7 +125,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const SizedBox(height: 24),
 
-              // ── ৩. সাপোর্ট ও সিস্টেম (Support) ─────────────────────────────────
               _SectionTitle(title: isTV ? 'সাপোর্ট এবং সিস্টেম' : 'Support & System', isTV: isTV),
               const SizedBox(height: 12),
               _buildGridOrColumn(
@@ -167,8 +163,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
 
               const SizedBox(height: 32),
-
-              // ── ৪. প্ল্যাটফর্ম স্ট্যাটাস (Platform Status Footer) ─────────────────
               _buildStatusFooter(isTV, appState, theme),
             ],
           ),
@@ -215,7 +209,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 appState.isSmartTv ? 'Smart TV Mode Active' : 'Mobile Interface Active'
               ),
               _buildStatusBadge(
-                appState.errorMessage.isEmpty ? Icons.g_rounded : Icons.warning_amber_rounded,
+                // FIXED: 'g_rounded' এর পরিবর্তে 'cloud_done_rounded' ব্যবহার করা হয়েছে
+                appState.errorMessage.isEmpty ? Icons.cloud_done_rounded : Icons.warning_amber_rounded,
                 appState.errorMessage.isEmpty ? 'Secure API Sync Active' : 'API Outage Detected',
                 color: appState.errorMessage.isEmpty ? const Color(0xFF06B6D4) : theme.colorScheme.error,
               ),
@@ -272,7 +267,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.between,
+                            // FIXED: 'between' এর পরিবর্তে 'spaceBetween' অবজেক্ট ব্যবহার করা হয়েছে
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(plan.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                               Container(
@@ -305,8 +301,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
-// ── মডার্ন লিস্টাইল সেটিংস কার্ড ───────────────────────────────────────────────
 
 class _SettingsTile extends StatefulWidget {
   final String title;
@@ -392,8 +386,6 @@ class _SettingsTileState extends State<_SettingsTile> {
   }
 }
 
-// ── প্রিমিয়াম অ্যাকাউন্ট ইনফো কার্ড ─────────────────────────────────────────────
-
 class _AccountInfoCard extends StatelessWidget {
   final dynamic profile;
   final bool isTV;
@@ -454,8 +446,6 @@ class _AccountInfoCard extends StatelessWidget {
     );
   }
 }
-
-// ── মেটেরিয়াল ডায়ালগ সাবমিশন ওভারলে ──────────────────────────────────────────
 
 class AuthOverlayDialog extends StatefulWidget {
   const AuthOverlayDialog({super.key});
@@ -575,8 +565,6 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
     );
   }
 }
-
-// ── Section Title ─────────────────────────────────────────────────────────────
 
 class _SectionTitle extends StatelessWidget {
   const _SectionTitle({required this.title, required this.isTV});
