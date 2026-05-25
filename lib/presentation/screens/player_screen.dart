@@ -1,5 +1,6 @@
 // lib/presentation/screens/player_screen.dart
 
+import 'dart:async'; // টাইমার ব্যবহারের জন্য জরুরি
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,10 +18,16 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'player-root');
   VideoPlayerController? _controller;
-  VoidCallback? _controllerListener; // লিসেনার ট্র্যাক করার জন্য ভেরিয়েবল
+  VoidCallback? _controllerListener;
   String? _activeChannelId;
   bool _showControls = true;
   bool _isLoading = false;
+
+  // ── টাইমার ও ইনপুট বাফারিং ভেরিয়েবল ──
+  String _enteredDigits = ""; 
+  bool _showNumberCard = false; // ডানদিকের নম্বর কার্ডটি দেখানোর জন্য ফ্ল্যাগ
+  Timer? _inputTimer; // নাম্বার কিপ্যাডের জন্য টাইমার
+  Timer? _controlsHideTimer; // কন্ট্রোলস অটো-হাইড করার জন্য টাইমার
 
   @override
   void initState() {
@@ -31,6 +38,35 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
+    
+    // অ্যাপে ঢোকার পর প্রথমবার কন্ট্রোলস অটো-হাইড টাইমার রান করা
+    _startControlsHideTimer();
+  }
+
+  // ── কন্ট্রোলস অটো-হাইড টাইমার মেথড ──
+  void _startControlsHideTimer() {
+    _controlsHideTimer?.cancel(); // আগের কোনো টাইমার চললে তা রিসেট করা
+    
+    _controlsHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _showControls && !_isLoading) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  // ── ইউজার অ্যাকশন বা স্ক্রিন ট্যাপে টাইমার রিসেট করার মেথড ──
+  void _toggleControlsVisibility() {
+    setState(() {
+      _showControls = !_showControls;
+    });
+    
+    if (_showControls) {
+      _startControlsHideTimer();
+    } else {
+      _controlsHideTimer?.cancel();
+    }
   }
 
   Future<void> _initController() async {
@@ -39,15 +75,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final appState = context.read<AppState>();
     final channel = appState.currentChannel;
 
-    // একই চ্যানেল অলরেডি একটিভ থাকলে পুনরায় লোড করার প্রয়োজন নেই
     if (_activeChannelId == channel.id) return;
 
     setState(() {
       _isLoading = true;
-      _activeChannelId = channel.id; // শুরুতেই আইডি ট্র্যাক করে লক করা হচ্ছে
+      _activeChannelId = channel.id;
+      _showControls = true; // নতুন চ্যানেল লোডের সময় কন্ট্রোল দেখাবে
     });
+    _startControlsHideTimer();
 
-    // পুরনো কন্ট্রোলার এবং তার লিসেনার প্রফেশনাল উপায়ে রিমুভ ও ডিসপোজ করা
     if (_controller != null) {
       final oldCtrl = _controller!;
       if (_controllerListener != null) {
@@ -64,7 +100,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final newController = VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
 
     try {
-      // নেটওয়ার্ক টাইমআউট বা ইনিশিয়ালের জন্য সেফটি বাউন্ডারি
       await newController.initialize();
       
       if (!mounted) {
@@ -74,7 +109,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       await newController.play();
       
-      // লিসেনার রেফারেন্স সেভ করে রাখা যাতে পরে রিমুভ করা যায় (Prevent Memory Leak)
       _controllerListener = () {
         if (mounted) setState(() {});
       };
@@ -84,15 +118,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _controller = newController;
         _isLoading = false;
       });
+      
+      _startControlsHideTimer(); // প্লে সফল হলে ফ্রেশ কাউন্টডাউন শুরু
     } catch (e) {
       debugPrint("Video initialization failed: $e");
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _activeChannelId = null; // অফলাইন লিংকের কারণে ফেইল করলে লক রিলিজ
+          _activeChannelId = null;
         });
         
-        // সেফ উপায়ে স্নাকবার শো করা
         final messenger = ScaffoldMessenger.of(context);
         messenger.clearSnackBars();
         messenger.showSnackBar(
@@ -109,24 +144,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // চ্যানেল অফলাইন বা লোডিং অবস্হায় থাকলেও নেক্সট/প্রিভিয়াস চ্যানেলে যাওয়া যাবে
   void _safeChannelSwitch(AppState appState, int direction) {
     setState(() {
-      _isLoading = false;    // নতুন ইনপুট নেওয়া সচল করতে লোডিং রিলিজ
-      _activeChannelId = null; // সোর্স আইডি ক্লিয়ার
+      _isLoading = false;    
+      _activeChannelId = null; 
     });
     appState.switchChannel(direction);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
+  }
+
+  void _switchToSpecificChannelIndex(AppState appState, int index) {
+    setState(() {
+      _isLoading = false;
+      _activeChannelId = null;
+    });
     
-    // চ্যানেল চেঞ্জ হওয়ার সাথে সাথে নতুন কন্ট্রোলার ইনিশিয়েট করা
+    appState.jumpToChannel(index); 
     WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
   }
 
   void _handleKey(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
     
-    // যেকোনো রিমোট বা কিবোর্ড অ্যাকশনে ইউআই কন্ট্রোল দৃশ্যমান করা
     if (!_showControls) {
       setState(() => _showControls = true);
+    }
+    _startControlsHideTimer(); // যেকোনো বাটন প্রেস করলে হাইড টাইম আরও ৩ সেকেন্ড বাড়বে
+
+    final String keyLabel = event.logicalKey.keyLabel;
+    if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
+      _handleNumberInput(keyLabel, appState);
+      return; 
     }
 
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -142,6 +190,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  // ── কাস্টম নম্বর কার্ড হ্যান্ডলিং লজিক ──
+  void _handleNumberInput(String digit, AppState appState) {
+    _inputTimer?.cancel(); 
+
+    setState(() {
+      _enteredDigits += digit;
+      _showNumberCard = true; // ইনপুট শুরু হলেই ডানদিকের কার্ডটি শো করবে
+    });
+
+    _inputTimer = Timer(const Duration(milliseconds: 1200), () {
+      final int? targetedChannelNumber = int.tryParse(_enteredDigits);
+      if (targetedChannelNumber != null && targetedChannelNumber > 0) {
+        final int targetIndex = targetedChannelNumber - 1; 
+        _switchToSpecificChannelIndex(appState, targetIndex);
+      }
+      
+      setState(() {
+        _enteredDigits = "";
+        _showNumberCard = false; // চ্যানেল সুইচ হওয়ার পর কার্ড হাইড হবে
+      });
+    });
+  }
+
   void _togglePlayPause() {
     if (_isLoading) return;
     final ctrl = _controller;
@@ -149,9 +220,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() {
       ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
     });
+    _startControlsHideTimer();
   }
 
   void _exitPlayer() {
+    _inputTimer?.cancel(); 
+    _controlsHideTimer?.cancel(); 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -161,7 +235,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // ডিসপোজের আগে লিসেনার রিমুভ নিশ্চিত করা
+    _inputTimer?.cancel();
+    _controlsHideTimer?.cancel(); 
     if (_controller != null && _controllerListener != null) {
       _controller!.removeListener(_controllerListener!);
     }
@@ -179,11 +254,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // listen: true রাখা হয়েছে শুধু UI টেক্সট এবং টোস্ট মেসেজ আপডেটের জন্য
     final appState = context.watch<AppState>();
 
-    // build মেথডের ভেতর ডিরেক্ট চেক না করে রিমোট রিকোয়েস্ট সিঙ্ক করার জন্য 
-    // মেমোরি ভেরিয়েবলের সাথে রি-ভ্যালিডেশন করা হলো
     if (_activeChannelId != null && _activeChannelId != appState.currentChannel.id) {
       _activeChannelId = appState.currentChannel.id;
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
@@ -199,11 +271,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: GestureDetector(
-          onTap: () => setState(() => _showControls = !_showControls),
+          onTap: _toggleControlsVisibility, 
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার (Full Stretch) ──────────────────────
+              // ── ১. ভিডিও লেয়ার ──────────────────────
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
@@ -216,20 +288,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 )
               else
-                Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
-                        strokeWidth: 3,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Loading ${appState.currentChannel.name}...',
-                        style: const TextStyle(color: Colors.white70, fontSize: 13, letterSpacing: 0.5),
-                      )
-                    ],
+                const Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
+                    strokeWidth: 3,
                   ),
                 ),
 
@@ -252,7 +314,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ২. টপ বার (চ্যানেল ইনফো ও ব্যাক বাটন) ────────────────────────
+              // ── ২. টপ বার ────────────────────────
               if (_showControls)
                 Positioned(
                   left: 0,
@@ -321,7 +383,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৩. সেন্টার কন্ট্রোলস (চ্যানেল সুইচ এবং প্লে-পজ) ─────────────────
+              // ── ৩. সেন্টার কন্ট্রোলস ─────────────────
               if (_showControls)
                 Center(
                   child: Row(
@@ -329,7 +391,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                     children: [
                       _buildCenterActionBtn(
                         icon: Icons.skip_previous_rounded,
-                        onTap: () => _safeChannelSwitch(appState, -1),
+                        onTap: () {
+                          _safeChannelSwitch(appState, -1);
+                          _startControlsHideTimer();
+                        },
                       ),
                       const SizedBox(width: 40),
                       GestureDetector(
@@ -361,13 +426,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       const SizedBox(width: 40),
                       _buildCenterActionBtn(
                         icon: Icons.skip_next_rounded,
-                        onTap: () => _safeChannelSwitch(appState, 1),
+                        onTap: () {
+                          _safeChannelSwitch(appState, 1);
+                          _startControlsHideTimer();
+                        },
                       ),
                     ],
                   ),
                 ),
 
-              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যাজ + প্রোগ্রেস বার) ──────────────
+              // ── ৪. মোবাইল বটম কন্ট্রোল বার ──────────────
               if (_showControls && initialized && !_isLoading)
                 Positioned(
                   left: 0,
@@ -437,7 +505,56 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৫. চ্যানেল সুইচ টোস্ট ───────────────────────────────────────
+              // ── ৫. প্রফেশনাল রাইট সাইড ডিজিটাল নম্বর কার্ড (New Feature) ──
+              Positioned(
+                right: 32,
+                top: 32,
+                child: AnimatedOpacity(
+                  opacity: _showNumberCard ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A).withOpacity(0.85), // ডিপ স্লেট গ্লাস এফেক্ট
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFF06B6D4).withOpacity(0.5), // সায়ান বর্ডার
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF06B6D4).withOpacity(0.2),
+                          blurRadius: 20,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.connected_tv_rounded, 
+                          color: Color(0xFF06B6D4), 
+                          size: 22,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          "CH  $_enteredDigits",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.black,
+                            fontFamily: 'monospace',
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── ৬. বটম লেফট চ্যানেল সুইচ টোস্ট (স্ট্যান্ডার্ড অ্যাকশনের জন্য) ──
               Positioned(
                 left: 32,
                 bottom: _showControls ? 76 : 32,
@@ -479,7 +596,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  // সেন্টার একশন বাটন জেনারেটর
   Widget _buildCenterActionBtn({required IconData icon, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
