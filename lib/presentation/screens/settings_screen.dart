@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../data/models/channel_model.dart';
+import '../../data/models/channel_model.dart'; // Note: Keeping your dynamic subscription types intact
 import '../providers/app_state.dart';
 import '../widgets/focus_glow_button.dart';
 
@@ -38,167 +38,227 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
 
+    // রেসপনসিভ টিভি মোড ডিটেকশন 
+    final isTV = MediaQuery.of(context).size.width > 800 && 
+                 MediaQuery.of(context).orientation == Orientation.landscape;
+
     return KeyboardListener(
       focusNode: _focusNode,
       onKeyEvent: _handleKey,
       child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A), // ইমেজের মতো প্রিমিয়াম ডার্ক ব্যাকগ্রাউন্ড
         appBar: AppBar(
-          title: const Text('Settings'),
+          backgroundColor: const Color(0xFF0F172A),
+          elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
+          title: Text(
+            isTV ? 'oTtking সেটিংস' : 'General Settings',
+            style: TextStyle(
+              fontSize: isTV ? 24 : 20, 
+              fontWeight: FontWeight.bold, 
+              color: Colors.white,
+            ),
+          ),
         ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // ── General ───────────────────────────────────────────────────
-            const _SectionTitle(title: 'General'),
-            const SizedBox(height: 12),
-            FocusGlowButton(
-              label: appState.themeMode == ThemeMode.dark
-                  ? 'Switch to Light Mode'
-                  : 'Switch to Dark Mode',
-              icon: appState.themeMode == ThemeMode.dark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
-              onTap: appState.toggleTheme,
-            ),
-            if (appState.isSmartTv) ...[
+        body: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: isTV ? 32 : 16, 
+            vertical: 16,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── ১. সাধারণ সেটিংস (General) ──────────────────────────────────
+              _SectionTitle(title: isTV ? 'সাধারণ' : 'General', isTV: isTV),
               const SizedBox(height: 12),
-              FocusGlowButton(
-                label: appState.bootToPlayer
-                    ? 'Disable Direct Player Boot'
-                    : 'Enable Direct Player Boot',
-                icon: Icons.tv_outlined,
-                onTap: () =>
-                    appState.setBootToPlayer(!appState.bootToPlayer),
-              ),
-            ],
-            const SizedBox(height: 24),
-
-            // ── Account ───────────────────────────────────────────────────
-            const _SectionTitle(title: 'Account & Access'),
-            const SizedBox(height: 12),
-            if (appState.isAuthenticated && appState.userProfile != null)
-              _AccountInfoCard(profile: appState.userProfile!, theme: theme),
-            const SizedBox(height: 12),
-            FocusGlowButton(
-              label: appState.isAuthenticated
-                  ? 'Switch Account / Logout'
-                  : 'Login / Register',
-              icon: Icons.person_outline,
-              onTap: () => showDialog(
-                context: context,
-                builder: (_) => const AuthOverlayDialog(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            FocusGlowButton(
-              label: 'View Subscription Plans',
-              icon: Icons.card_membership,
-              onTap: () =>
-                  _showSubscriptions(context, appState.plans),
-            ),
-            const SizedBox(height: 24),
-
-            // ── Support ───────────────────────────────────────────────────
-            const _SectionTitle(title: 'Support'),
-            const SizedBox(height: 12),
-            FocusGlowButton(
-              label: 'Reload Channel Catalog',
-              icon: Icons.refresh,
-              onTap: () {
-                appState.loadCatalog();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Refreshing catalog…')),
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            FocusGlowButton(
-              label: 'Contact Support',
-              icon: Icons.support_agent,
-              onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Support request queued securely.'),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // ── Status card ───────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              _buildLayoutWrapper(
+                isTV: isTV,
                 children: [
-                  Text(
-                    'Platform Status',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                  FocusGlowButton(
+                    isTV: isTV,
+                    label: appState.themeMode == ThemeMode.dark
+                        ? 'Switch to Light Mode'
+                        : 'Switch to Dark Mode',
+                    icon: appState.themeMode == ThemeMode.dark
+                        ? Icons.light_mode_outlined
+                        : Icons.dark_mode_outlined,
+                    onTap: appState.toggleTheme,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    appState.isSmartTv
-                        ? 'Smart TV remote navigation enabled'
-                        : 'Mobile touch UI active',
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Icon(
-                        appState.errorMessage.isEmpty
-                            ? Icons.check_circle_outline
-                            : Icons.warning_amber_rounded,
-                        size: 16,
-                        color: appState.errorMessage.isEmpty
-                            ? Colors.green
-                            : theme.colorScheme.error,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          appState.errorMessage.isEmpty
-                              ? 'Secure API sync active'
-                              : 'API sync failed',
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (appState.errorMessage.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      appState.errorMessage,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.error,
-                      ),
+                  if (appState.isSmartTv)
+                    FocusGlowButton(
+                      isTV: isTV,
+                      label: appState.bootToPlayer
+                          ? 'Disable Direct Player Boot'
+                          : 'Enable Direct Player Boot',
+                      icon: Icons.tv_rounded,
+                      onTap: () => appState.setBootToPlayer(!appState.bootToPlayer),
                     ),
-                  ],
                 ],
               ),
-            ),
-            const SizedBox(height: 32),
-          ],
+
+              const SizedBox(height: 28),
+
+              // ── ২. অ্যাকাউন্ট এবং অ্যাক্সেস (Account & Access) ─────────────────────
+              _SectionTitle(title: isTV ? 'অ্যাকাউন্ট এবং অ্যাক্সেস' : 'Account & Access', isTV: isTV),
+              const SizedBox(height: 12),
+              if (appState.isAuthenticated && appState.userProfile != null) ...[
+                _AccountInfoCard(profile: appState.userProfile!, theme: theme, isTV: isTV),
+                const SizedBox(height: 12),
+              ],
+              _buildLayoutWrapper(
+                isTV: isTV,
+                children: [
+                  FocusGlowButton(
+                    isTV: isTV,
+                    label: appState.isAuthenticated
+                        ? 'Switch Account / Logout'
+                        : 'Login / Register',
+                    icon: Icons.account_circle_outlined,
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => const AuthOverlayDialog(),
+                    ),
+                  ),
+                  FocusGlowButton(
+                    isTV: isTV,
+                    label: isTV ? 'সাবক্রিপশন প্ল্যান দেখুন' : 'View Subscription Plans',
+                    icon: Icons.card_membership_rounded,
+                    onTap: () => _showSubscriptions(context, appState.plans),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 28),
+
+              // ── ৩. সাপোর্ট (Support) ─────────────────────────────────────────
+              _SectionTitle(title: isTV ? 'সাপোর্ট' : 'Support', isTV: isTV),
+              const SizedBox(height: 12),
+              _buildLayoutWrapper(
+                isTV: isTV,
+                children: [
+                  FocusGlowButton(
+                    isTV: isTV,
+                    label: isTV ? 'ক্যাটালগ পুনরায় লোড করুন' : 'Reload Channel Catalog',
+                    icon: Icons.refresh_rounded,
+                    onTap: () {
+                      appState.loadCatalog();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Refreshing catalog…')),
+                      );
+                    },
+                  ),
+                  FocusGlowButton(
+                    isTV: isTV,
+                    label: isTV ? 'কাস্টমার সাপোর্ট' : 'Contact Support',
+                    icon: Icons.headset_mic_outlined,
+                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Support request queued securely.')),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 32),
+
+              // ── ৪. প্ল্যাটফর্ম স্ট্যাটাস (Platform Status) ─────────────────────────
+              _SectionTitle(title: isTV ? 'প্ল্যাটফর্ম স্ট্যাটাস' : 'Platform Status', isTV: isTV),
+              const SizedBox(height: 12),
+              _buildStatusFooter(isTV, appState, theme),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showSubscriptions(
-      BuildContext context, List<SubscriptionPlanModel> plans) {
+  // টিভি ও মোবাইলের রেসপনসিভ গ্রিড র‍্যাপার মেথড
+  Widget _buildLayoutWrapper({required bool isTV, required List<Widget> children}) {
+    if (isTV) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: children.map((widget) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: widget,
+          ),
+        )).toList(),
+      );
+    }
+    return Column(
+      children: children.map((widget) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: widget,
+      )).toList(),
+    );
+  }
+
+  // ইমেজের ডিজাইন অনুযায়ী প্ল্যাটফর্ম স্ট্যাটাস বার
+  Widget _buildStatusFooter(bool isTV, AppState appState, ThemeData theme) {
+    final statusContent = [
+      _buildStatusBadge(
+        Icons.check_circle_outline, 
+        appState.isSmartTv ? 'Smart TV remote navigation enabled' : 'Mobile touch UI active'
+      ),
+      if (isTV) const SizedBox(width: 24) else const SizedBox(height: 8),
+      _buildStatusBadge(
+        appState.errorMessage.isEmpty ? Icons.cloud_done_outlined : Icons.warning_amber_rounded,
+        appState.errorMessage.isEmpty ? 'Secure API sync active' : 'API sync failed',
+        color: appState.errorMessage.isEmpty ? const Color(0xFF06B6D4) : theme.colorScheme.error,
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B).withOpacity(0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.04)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isTV) 
+            Row(children: statusContent) 
+          else 
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: statusContent),
+          if (appState.errorMessage.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              appState.errorMessage,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+            ),
+          ]
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(IconData icon, String text, {Color color = const Color(0xFF06B6D4)}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: color),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+      ],
+    );
+  }
+
+  // প্রিমিয়াম পপআপ সাবক্রিপশন লিস্ট डायलॉग
+  void _showSubscriptions(BuildContext context, List<dynamic> plans) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Premium Plans'),
+        backgroundColor: const Color(0xFF1E293B),
+        title: const Text('Premium Plans', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SizedBox(
-          width: 360,
+          width: 380,
           child: plans.isEmpty
-              ? const Text('No plans available.')
+              ? const Text('No plans available.', style: TextStyle(color: Colors.white60))
               : ListView.separated(
                   shrinkWrap: true,
                   itemCount: plans.length,
@@ -208,52 +268,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     return Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(18),
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.white.withOpacity(0.05)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             children: [
-                              Text(
-                                plan.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                              Text(plan.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                               const SizedBox(width: 8),
-                              Chip(
-                                label: Text(
-                                  plan.badge,
-                                  style: const TextStyle(fontSize: 11),
-                                ),
-                                padding: EdgeInsets.zero,
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(color: const Color(0xFF06B6D4).withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
+                                child: Text(plan.badge, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
                           const SizedBox(height: 4),
-                          Text(
-                            plan.price,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          Text(plan.price, style: const TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.w600)),
                           const SizedBox(height: 6),
-                          Text(plan.description),
-                          if (plan.features.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            ...plan.features.map(
-                              (f) => Row(
-                                children: [
-                                  const Icon(Icons.check,
-                                      size: 14, color: Colors.green),
-                                  const SizedBox(width: 6),
-                                  Expanded(child: Text(f)),
-                                ],
-                              ),
-                            ),
-                          ],
+                          Text(plan.description, style: const TextStyle(color: Colors.white60, fontSize: 13)),
                         ],
                       ),
                     );
@@ -263,7 +299,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
+            child: const Text('Close', style: TextStyle(color: Color(0xFF06B6D4))),
           ),
         ],
       ),
@@ -274,43 +310,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 // ── Account info card ─────────────────────────────────────────────────────────
 
 class _AccountInfoCard extends StatelessWidget {
-  const _AccountInfoCard({required this.profile, required this.theme});
+  const _AccountInfoCard({required this.profile, required this.theme, required this.isTV});
 
-  final UserProfileModel profile;
+  final dynamic profile;
   final ThemeData theme;
+  final bool isTV;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: isTV ? MediaQuery.of(context).size.width * 0.46 : double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withAlpha(20),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.primary.withAlpha(60)),
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.15)),
       ),
       child: Row(
         children: [
           CircleAvatar(
-            backgroundColor: theme.colorScheme.primary.withAlpha(50),
+            radius: 22,
+            backgroundColor: const Color(0xFF06B6D4).withOpacity(0.2),
             child: Text(
-              profile.email.isNotEmpty
-                  ? profile.email[0].toUpperCase()
-                  : '?',
-              style: TextStyle(color: theme.colorScheme.primary),
+              profile.email.isNotEmpty ? profile.email[0].toUpperCase() : '?',
+              style: const TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(profile.email,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(profile.plan,
-                    style: TextStyle(
-                      color: theme.colorScheme.primary,
-                      fontSize: 12,
-                    )),
+                Text(profile.email, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15)),
+                const SizedBox(height: 2),
+                Text('Subscription Plan: ${profile.plan}', style: const TextStyle(color: Colors.white38, fontSize: 12)),
               ],
             ),
           ),
@@ -365,7 +398,9 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
     final appState = context.watch<AppState>();
 
     return AlertDialog(
-      title: Text(_isRegister ? 'Create account' : 'Sign in securely'),
+      backgroundColor: const Color(0xFF1E293B),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Text(_isRegister ? 'Create account' : 'Sign in securely', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       content: SizedBox(
         width: 360,
         child: Column(
@@ -374,66 +409,62 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
             TextField(
               controller: _emailCtrl,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
                 labelText: 'Email',
-                prefixIcon: Icon(Icons.email_outlined),
+                labelStyle: const TextStyle(color: Colors.white38),
+                prefixIcon: const Icon(Icons.email_outlined, color: Colors.white38),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF06B6D4))),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _passCtrl,
               obscureText: true,
-              decoration: const InputDecoration(
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
                 labelText: 'Password',
-                prefixIcon: Icon(Icons.lock_outline),
+                labelStyle: const TextStyle(color: Colors.white38),
+                prefixIcon: const Icon(Icons.lock_outline, color: Colors.white38),
+                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.1))),
+                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF06B6D4))),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             TextButton(
-              onPressed: () =>
-                  setState(() => _isRegister = !_isRegister),
+              onPressed: () => setState(() => _isRegister = !_isRegister),
               child: Text(
-                _isRegister
-                    ? 'Already have an account? Sign in'
-                    : 'Need an account? Register',
+                _isRegister ? 'Already have an account? Sign in' : 'Need an account? Register',
+                style: const TextStyle(color: Color(0xFF06B6D4)),
               ),
             ),
             if (appState.errorMessage.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                appState.errorMessage,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.error,
-                  fontSize: 13,
-                ),
-              ),
+              Text(appState.errorMessage, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
             ],
           ],
         ),
       ),
       actions: [
-        // Logout button (only when signed in)
         if (appState.isAuthenticated)
           TextButton(
             onPressed: () {
               appState.logout();
               Navigator.pop(context);
             },
-            child: const Text('Logout'),
+            child: const Text('Logout', style: TextStyle(color: Colors.redAccent)),
           ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
         ),
         FilledButton(
           onPressed: _isLoading ? null : () => _submit(appState),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF06B6D4)),
           child: _isLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(_isRegister ? 'Register' : 'Login'),
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+              : Text(_isRegister ? 'Register' : 'Login', style: const TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );
@@ -443,18 +474,21 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
 // ── Section title ─────────────────────────────────────────────────────────────
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title});
+  const _SectionTitle({required this.title, required this.isTV});
 
   final String title;
+  final bool isTV;
 
   @override
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(context)
-          .textTheme
-          .titleMedium
-          ?.copyWith(fontWeight: FontWeight.bold),
+      style: TextStyle(
+        fontSize: isTV ? 18 : 14,
+        fontWeight: FontWeight.bold,
+        color: Colors.white60,
+        letterSpacing: 0.5,
+      ),
     );
   }
 }
