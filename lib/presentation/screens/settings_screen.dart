@@ -155,21 +155,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     label: isTV ? 'কাস্টমার সাপোর্ট' : 'Contact Support',
                     icon: Icons.headset_mic_outlined,
                     onTap: () async {
-  final Uri url = Uri.parse('https://ottking.top/');
+  										final Uri url = Uri.parse("https://ottking.top/");
 
-  if (await canLaunchUrl(url)) {
-    await launchUrl(
-      url,
-      mode: LaunchMode.externalApplication, // ব্রাউসারে ওপেন হবে
-    );
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Could not open website'),
-      ),
-    );
-  }
-},
+  											await launchUrl(url,mode: LaunchMode.externalApplication,
+  										);
+												},
                   ),
                 ],
               ),
