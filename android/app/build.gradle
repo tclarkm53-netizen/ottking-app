@@ -1,7 +1,8 @@
+// android/build.gradle ফাইলে এটি আপডেট করুন
 plugins {
-    id "com.android.application"
-    id "org.jetbrains.kotlin.android" // কটলিনের নতুন নিয়ম অনুযায়ী আপডেট করা হয়েছে
-    id "dev.flutter.flutter-gradle-plugin"
+    id "com.android.application" version "8.2.1" apply false // আপনার গ্রেডল ভার্সন অনুযায়ী
+    id "org.jetbrains.kotlin.android" version "1.9.22" apply false // 👈 এই ভার্সনটি এখানে বসানো বাধ্যতামূলক
+    id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
 }
 
 def keystoreProperties = new Properties()
