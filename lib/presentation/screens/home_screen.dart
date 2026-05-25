@@ -17,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  final PageController _pageController = PageController(viewportFraction: 1.0); // ব্যানার ডানে-বামে ১০০% ফুল উইডথ করার জন্য ১.০ করা হয়েছে
+  final PageController _pageController = PageController(viewportFraction: 1.0); 
 
   @override
   void dispose() {
@@ -26,7 +26,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // রিমোট কন্ট্রোল বা কি-বোর্ড ফোকাস হ্যান্ডলিং (নিরাপদ BuildContext সহ)
   void _handleKey(KeyEvent event, AppState appState, BuildContext context) {
     if (event is! KeyDownEvent) return;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -45,7 +44,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
     
-    // ডিভাইসটি অ্যান্ড্রয়েড টিভি (বড় স্ক্রিন ও ল্যান্ডস্কেপ মোড) কিনা তা চেক করার কন্ডিশন
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
@@ -53,14 +51,17 @@ class _HomeScreenState extends State<HomeScreen> {
       focusNode: _rootFocusNode,
       onKeyEvent: (event) => _handleKey(event, appState, context),
       child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A), // ইমেজের মতো ডার্ক ব্যাকগ্রাউন্ড কালার
         appBar: AppBar(
+          backgroundColor: const Color(0xFF0F172A),
+          elevation: 0,
           title: Text(
             AppConstants.appName,
-            style: TextStyle(fontSize: isTV ? 28 : 20), // টিভির জন্য বড় ফন্ট সাইজ
+            style: TextStyle(fontSize: isTV ? 26 : 20, fontWeight: FontWeight.bold, color: Colors.white),
           ),
           actions: [
             IconButton(
-              icon: Icon(Icons.settings_outlined, size: isTV ? 32 : 24), // টিভির জন্য বড় সেটিংস বাটন
+              icon: Icon(Icons.settings_outlined, size: isTV ? 30 : 24, color: Colors.white),
               onPressed: () => Navigator.pushNamed(context, '/settings'),
             ),
           ],
@@ -76,14 +77,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     appState: appState,
                     theme: theme,
                     pageController: _pageController,
-                    isTV: isTV, // রেসপনসিভ ফ্ল্যাগ বডিতে পাস করা হলো
+                    isTV: isTV,
                   ),
       ),
     );
   }
 }
 
-// ── Body (Sliver ও Responsive Layout) ──────────────────────────────────────────
+// ── Body (Sliver Layout) ───────────────────────────────────────────────────────
 
 class _HomeBody extends StatelessWidget {
   const _HomeBody({
@@ -104,11 +105,11 @@ class _HomeBody extends StatelessWidget {
       onRefresh: appState.loadCatalog,
       child: CustomScrollView(
         slivers: [
-          // ── ১. ব্যানার সেকশন (সম্পূর্ণ ফুল উইডথ, নো মার্জিন) ──────────────────────
+          // ── ১. ব্যানার সেকশন (১০০% ফুল উইডথ) ──────────────────────────────────
           if (appState.banners.isNotEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: isTV ? 320 : 200, // টিভির জন্য ব্যানারের উচ্চতা বেশি হবে
+                height: isTV ? 340 : 210, // ইমেজের এ্যাসপেক্ট রেশিওর সাথে মিল রেখে হাইট
                 child: PageView.builder(
                   controller: pageController,
                   itemCount: appState.banners.length,
@@ -120,34 +121,18 @@ class _HomeBody extends StatelessWidget {
               ),
             ),
 
-          // ── ২. ক্যাটাগরি ও হেডার সেকশন (সাইড প্যাডিং সহ) ─────────────────────────
+          // ── ২. হেডার সেকশন (ক্যাটাগরি রিমুভড) ──────────────────────────────────
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                if (appState.categories.isNotEmpty) ...[
-                  _SectionHeader(title: 'Featured Categories', isTV: isTV),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: appState.categories.map((cat) {
-                      return Chip(
-                        label: Text(cat.name, style: TextStyle(fontSize: isTV ? 16 : 14)),
-                        avatar: Text(cat.icon, style: TextStyle(fontSize: isTV ? 18 : 14)),
-                        padding: isTV ? const EdgeInsets.all(12) : const EdgeInsets.all(8),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-                _SectionHeader(title: 'Live Channels', isTV: isTV),
-                const SizedBox(height: 12),
+                _SectionHeader(title: isTV ? 'এখন চলছে:' : 'লাইভ চ্যানেল', isTV: isTV),
+                const SizedBox(height: 8),
               ]),
             ),
           ),
 
-          // ── ৩. চ্যানেল গ্রিড সেকশন (মোবাইলে ২টি, টিভিতে ৪টি কলাম) ─────────────────
+          // ── ৩. চ্যানেল গ্রিড সেকশন (মোবাইল ও টিভির জন্য অপ্টিমাইজড রেশিও) ───────────
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: appState.channels.isEmpty
@@ -155,16 +140,17 @@ class _HomeBody extends StatelessWidget {
                     child: Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
-                        child: Text('No channels available'),
+                        child: Text('No channels available', style: TextStyle(color: Colors.white)),
                       ),
                     ),
                   )
                 : SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isTV ? 4 : 2, // টিভি ভিউ হলে ৪টি কলাম দেখাবে
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: isTV ? 1.3 : 1.1, // স্ক্রিন এডজাস্টমেন্ট রেশিও
+                      crossAxisCount: isTV ? 4 : 2, // টিভিতে ৪ কলাম, মোবাইলে ২ কলাম
+                      mainAxisSpacing: 14,
+                      crossAxisSpacing: 14,
+                      // লেআউট পরিবর্তনের কারণে এ্যাসপেক্ট রেশিও আপডেট (টিভিতে চওড়া, মোবাইলে স্কয়ার-লম্বাটে)
+                      childAspectRatio: isTV ? 2.1 : 0.95, 
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -172,8 +158,8 @@ class _HomeBody extends StatelessWidget {
                         final selected = appState.currentChannelIndex == index;
                         
                         return FocusGlowButton(
+                          isTV: isTV, // বাটনকে জানানো হলো এটি কোন মোডে আছে
                           label: channel.name,
-                          // নতুন আপগ্রেড: লোগো URL থাকলে Image.network পাস হবে, না থাকলে ডিফল্ট আইকন যাবে
                           icon: channel.logoUrl != null
                               ? Image.network(
                                   channel.logoUrl,
@@ -183,18 +169,30 @@ class _HomeBody extends StatelessWidget {
                                     return const Center(child: CircularProgressIndicator(strokeWidth: 2));
                                   },
                                   errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.tv, size: 30, color: Colors.grey),
+                                      const Icon(Icons.tv, size: 24, color: Colors.grey),
                                 )
                               : Icons.play_circle_outline,
                           selected: selected,
-                          trailing: Text(
-                            channel.quality,
-                            style: TextStyle(
-                              fontSize: isTV ? 14 : 11,
-                              color: theme.colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          trailing: isTV 
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.white30),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('HD', style: TextStyle(fontSize: 10, color: Colors.white60)),
+                                )
+                              : Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.white30),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    channel.quality.isNotEmpty ? channel.quality : 'HD',
+                                    style: const TextStyle(fontSize: 10, color: Colors.white60),
+                                  ),
+                                ),
                           onTap: () {
                             appState.currentChannelIndex = index;
                             Navigator.pushNamed(context, '/player');
@@ -212,7 +210,7 @@ class _HomeBody extends StatelessWidget {
   }
 }
 
-// ── Banner card (১০০% ফুল উইডথ এবং নেটওয়ার্ক ইমেজ সাপোর্ট সহ) ─────────────────────
+// ── Banner card ───────────────────────────────────────────────────────────────
 
 class _BannerCard extends StatelessWidget {
   const _BannerCard({required this.banner, required this.theme, required this.isTV});
@@ -223,14 +221,12 @@ class _BannerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // API থেকে পাঠানো ব্যানার ইমেজের লিঙ্ক রিড করা
     final String? imageUrl = banner.imageUrl ?? banner.logoUrl;
 
     return Container(
-      width: double.infinity, // সম্পূর্ণ স্ক্রিন জুড়ে থাকবে
+      width: double.infinity,
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
-        // ছবি থাকলে ব্যাকগ্রাউন্ড কভার ইমেজ হিসেবে লোড হবে
         image: imageUrl != null
             ? DecorationImage(
                 image: NetworkImage(imageUrl),
@@ -239,7 +235,6 @@ class _BannerCard extends StatelessWidget {
             : null,
       ),
       child: Container(
-        // ইমেজের ওপর টেক্সট পরিষ্কার ফুটিয়ে তোলার জন্য ব্ল্যাক গ্রেডিয়েন্ট ওভারলে
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [Colors.black.withOpacity(0.85), Colors.transparent],
@@ -247,23 +242,33 @@ class _BannerCard extends StatelessWidget {
             end: Alignment.topCenter,
           ),
         ),
-        padding: EdgeInsets.all(isTV ? 32 : 20),
+        padding: EdgeInsets.all(isTV ? 32 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text(
-              (banner.title ?? '').toString(),
-              style: (isTV ? theme.textTheme.headlineMedium : theme.textTheme.titleLarge)?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
+            // ইমেজের মতো ডট ইন্ডিকেটর স্পেস ট্র্যাকিং
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black45,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                (banner.title ?? '').toString(),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: isTV ? 20 : 14,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               (banner.subtitle ?? '').toString(),
-              style: (isTV ? theme.textTheme.titleMedium : theme.textTheme.bodyMedium)?.copyWith(
+              style: TextStyle(
                 color: Colors.white70,
+                fontSize: isTV ? 15 : 11,
               ),
             ),
           ],
@@ -285,10 +290,11 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            fontSize: isTV ? 22 : 16, // টিভির জন্য বড় টেক্সট
-          ),
+      style: TextStyle(
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+        fontSize: isTV ? 20 : 16,
+      ),
     );
   }
 }
@@ -311,16 +317,9 @@ class _ErrorView extends StatelessWidget {
           children: [
             const Icon(Icons.wifi_off_rounded, size: 64, color: Colors.grey),
             const SizedBox(height: 16),
-            Text(
-              'Could not load channels',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            const Text('Could not load channels', style: TextStyle(color: Colors.white)),
             const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onRetry,
