@@ -20,34 +20,17 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    // লোগো পালস বা অ্যানিমেশন কন্ট্রোলার
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // স্প্ল্যাশ স্ক্রিন চালু হওয়ামাত্রই ব্যাকগ্রাউন্ডে ডাটা লোড করা শুরু হবে
-    _initializeApp();
-  }
-
-  Future<void> _initializeApp() async {
-    final appState = context.read<AppState>();
-    
-    // ১. ন্যূনতম স্প্ল্যাশ ডিউরেশন এবং ডাটা লোড করার কাজ সমান্তরালভাবে (Parallel) চলবে
-    await Future.wait([
-      Future.delayed(AppConstants.splashDuration),
-      appState.loadCatalog(), // হোম স্ক্রিনে যাওয়ার আগেই ক্যাটালগ সম্পূর্ণ লোড নিশ্চিত করবে
-    ]);
-
-    // ২. ডাটা লোড শেষ হলে নেভিগেশন শুরু হবে
-    _navigate();
+    Future.delayed(AppConstants.splashDuration, _navigate);
   }
 
   void _navigate() {
     if (!mounted) return;
     final appState = context.read<AppState>();
-    
-    // ডাটা সফলভাবে লোড হোক বা এরর আসুক, স্টেট অনুযায়ী সঠিক স্ক্রিনে পাঠানো হবে
     Navigator.pushReplacementNamed(
       context,
       appState.shouldBootToPlayer() ? '/player' : '/home',
@@ -64,15 +47,20 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    // টিভি স্ক্রিন রেসপনসিভনেস চেক
+    // হোম স্ক্রিনের সাথে ম্যাচ রেখে টিভি ভিউ চেক (রেসপনসিভনেস)
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
+      // হোম স্ক্রিনের ব্যানার ও থিমের সাথে ম্যাচিং ডার্ক স্লেট ব্লু ব্যাকগ্রাউন্ড
+      backgroundColor: const Color(0xFF0F172A), 
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF111827), Color(0xFF1F2937)],
+            colors: [
+              theme.colorScheme.primary.withOpacity(0.1), // হালকা প্রাইমারি গ্লো
+              const Color(0xFF0F172A),
+            ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -81,43 +69,53 @@ class _SplashScreenState extends State<SplashScreen>
           child: AnimatedBuilder(
             animation: _controller,
             builder: (_, __) => Transform.scale(
-              scale: 0.95 + (_controller.value * 0.08),
+              scale: 0.95 + (_controller.value * 0.06), // স্মুথ পালস অ্যানিমেশন
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // লোগো কন্টেইনার (টিভির জন্য সাইজ এডজাস্ট করা হয়েছে)
+                  // হোম স্ক্রিনের ফোকাস গ্লো বাটনের সাথে ম্যাচিং লোগো ডিজাইন
                   Container(
-                    width: isTV ? 140 : 96,
-                    height: isTV ? 140 : 96,
+                    width: isTV ? 130 : 96,
+                    height: isTV ? 130 : 96,
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withAlpha(31),
+                      color: theme.colorScheme.primary.withAlpha(26),
                       shape: BoxShape.circle,
                       border: Border.all(
                         color: theme.colorScheme.primary,
-                        width: isTV ? 3 : 2,
+                        width: 2,
                       ),
+                      // হোম স্ক্রিনের বাটনগুলোর মতো গ্লো ইফেক্ট
+                      boxShadow: [
+                        BoxShadow(
+                          color: theme.colorScheme.primary.withAlpha(60),
+                          blurRadius: 30,
+                          spreadRadius: 2,
+                        ),
+                      ],
                     ),
                     child: Icon(
-                      Icons.live_tv,
-                      size: isTV ? 64 : 46,
+                      Icons.live_tv_rounded, // আধুনিক রাউন্ডেড আইকন
+                      size: isTV ? 54 : 44,
                       color: theme.colorScheme.primary,
                     ),
                   ),
-                  SizedBox(height: isTV ? 30 : 20),
-                  // অ্যাপের নাম
+                  SizedBox(height: isTV ? 28 : 24),
+                  // অ্যাপের নাম (রেসপনসিভ ফন্ট সহ)
                   Text(
                     AppConstants.appName,
                     style: (isTV ? theme.textTheme.headlineLarge : theme.textTheme.headlineMedium)?.copyWith(
                       color: Colors.white,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900, // আরও একটু বোল্ড ও প্রিমিয়াম লুক
+                      letterSpacing: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
                   // অ্যাপের ট্যাগলাইন
                   Text(
                     AppConstants.appTagline,
                     style: (isTV ? theme.textTheme.titleMedium : theme.textTheme.bodyMedium)?.copyWith(
-                      color: Colors.white70,
+                      color: Colors.white60,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ],
