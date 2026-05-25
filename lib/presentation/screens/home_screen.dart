@@ -67,7 +67,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         body: appState.isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
+                ),
+              )
             : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
                 ? _ErrorView(
                     message: appState.errorMessage,
@@ -121,9 +125,9 @@ class _HomeBody extends StatelessWidget {
               ),
             ),
 
-          // ── ২. হেডার সেকশন (ক্যাটাগরি রিমুভড) ──────────────────────────────────
+          // ── ২. হেডার সেকশন ──────────────────────────────────
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+            padding: EdgeInsets.fromLTRB(isTV ? 32 : 16, 24, isTV ? 32 : 16, 12),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 _SectionHeader(title: isTV ? 'এখন চলছে:' : 'লাইভ চ্যানেল', isTV: isTV),
@@ -132,9 +136,9 @@ class _HomeBody extends StatelessWidget {
             ),
           ),
 
-          // ── ৩. চ্যানেল গ্রিড সেকশন (মোবাইল ও টিভির জন্য অপ্টিমাইজড রেশিও) ───────────
+          // ── ৩. চ্যানেল গ্রিড সেকশন (৫:২ রেশিও এবং ওরিয়েন্টেশন মার্জিন সহ আপডেট) ───────────
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: EdgeInsets.symmetric(horizontal: isTV ? 32 : 16),
             sliver: appState.channels.isEmpty
                 ? const SliverToBoxAdapter(
                     child: Center(
@@ -147,10 +151,10 @@ class _HomeBody extends StatelessWidget {
                 : SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: isTV ? 4 : 2, // টিভিতে ৪ কলাম, মোবাইলে ২ কলাম
-                      mainAxisSpacing: 14,
-                      crossAxisSpacing: 14,
-                      // লেআউট পরিবর্তনের কারণে এ্যাসপেক্ট রেশিও আপডেট (টিভিতে চওড়া, মোবাইলে স্কয়ার-লম্বাটে)
-                      childAspectRatio: isTV ? 2.1 : 0.95, 
+                      mainAxisSpacing: isTV ? 18 : 14,
+                      crossAxisSpacing: isTV ? 18 : 14,
+                      // ── আপনার দেওয়া ৫:২ রেশিও অনুযায়ী childAspectRatio আপডেট (৫/২ = ২.৫) ──
+                      childAspectRatio: isTV ? 2.5 : 0.95, 
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -160,39 +164,32 @@ class _HomeBody extends StatelessWidget {
                         return FocusGlowButton(
                           isTV: isTV, // বাটনকে জানানো হলো এটি কোন মোডে আছে
                           label: channel.name,
-                          icon: channel.logoUrl != null
+                          icon: channel.logoUrl != null && channel.logoUrl.isNotEmpty
                               ? Image.network(
                                   channel.logoUrl,
                                   fit: BoxFit.contain,
                                   loadingBuilder: (context, child, loadingProgress) {
                                     if (loadingProgress == null) return child;
-                                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                                    return const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    );
                                   },
                                   errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.tv, size: 24, color: Colors.grey),
+                                      const Icon(Icons.tv, size: 24, color: Colors.white30),
                                 )
                               : Icons.play_circle_outline,
                           selected: selected,
-                          trailing: isTV 
-                              ? Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.white30),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text('HD', style: TextStyle(fontSize: 10, color: Colors.white60)),
-                                )
-                              : Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.white30),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    channel.quality.isNotEmpty ? channel.quality : 'HD',
-                                    style: const TextStyle(fontSize: 10, color: Colors.white60),
-                                  ),
-                                ),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.white24),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              channel.quality.isNotEmpty ? channel.quality : 'HD',
+                              style: const TextStyle(fontSize: 10, color: Colors.white60),
+                            ),
+                          ),
                           onTap: () {
                             appState.currentChannelIndex = index;
                             Navigator.pushNamed(context, '/player');
@@ -247,7 +244,6 @@ class _BannerCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            // ইমেজের মতো ডট ইন্ডিকেটর স্পেস ট্র্যাকিং
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -319,10 +315,13 @@ class _ErrorView extends StatelessWidget {
             const SizedBox(height: 16),
             const Text('Could not load channels', style: TextStyle(color: Colors.white)),
             const SizedBox(height: 8),
-            Text(message, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
+            Text('No Internet Access or api mismass', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white60)),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onRetry,
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF06B6D4),
+              ),
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
             ),
