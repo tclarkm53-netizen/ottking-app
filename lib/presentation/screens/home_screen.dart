@@ -17,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  final PageController _pageController = PageController(viewportFraction: 1.0); // ব্যানার 100% উইডথ করার জন্য 1.0 করা হয়েছে
+  final PageController _pageController = PageController(viewportFraction: 1.0); // ব্যানার ডানে-বামে ১০০% ফুল উইডথ করার জন্য ১.০ করা হয়েছে
 
   @override
   void dispose() {
@@ -26,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // রিমোট কন্ট্রোল বা কি-বোর্ড ফোকাস হ্যান্ডলিং (নিরাপদ BuildContext সহ)
   void _handleKey(KeyEvent event, AppState appState, BuildContext context) {
     if (event is! KeyDownEvent) return;
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -44,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.watch<AppState>();
     final theme = Theme.of(context);
     
-    // টিভি স্ক্রিন নাকি মোবাইল স্ক্রিন তা চেক করার জন্য রেসপনসিভ কন্ডিশন
+    // ডিভাইসটি অ্যান্ড্রয়েড টিভি (বড় স্ক্রিন ও ল্যান্ডস্কেপ মোড) কিনা তা চেক করার কন্ডিশন
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
@@ -55,11 +56,11 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: Text(
             AppConstants.appName,
-            style: TextStyle(fontSize: isTV ? 28 : 20), // টিভির জন্য বড় ফন্ট
+            style: TextStyle(fontSize: isTV ? 28 : 20), // টিভির জন্য বড় ফন্ট সাইজ
           ),
           actions: [
             IconButton(
-              icon: Icon(Icons.settings_outlined, size: isTV ? 32 : 24),
+              icon: Icon(Icons.settings_outlined, size: isTV ? 32 : 24), // টিভির জন্য বড় সেটিংস বাটন
               onPressed: () => Navigator.pushNamed(context, '/settings'),
             ),
           ],
@@ -75,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     appState: appState,
                     theme: theme,
                     pageController: _pageController,
-                    isTV: isTV, // রেসপনসিভ ফ্ল্যাগ পাস করা হলো
+                    isTV: isTV, // রেসপনসিভ ফ্ল্যাগ বডিতে পাস করা হলো
                   ),
       ),
     );
@@ -107,7 +108,7 @@ class _HomeBody extends StatelessWidget {
           if (appState.banners.isNotEmpty)
             SliverToBoxAdapter(
               child: SizedBox(
-                height: isTV ? 320 : 200, // টিভির জন্য ব্যানারের হাইট বেশি হবে
+                height: isTV ? 320 : 200, // টিভির জন্য ব্যানারের উচ্চতা বেশি হবে
                 child: PageView.builder(
                   controller: pageController,
                   itemCount: appState.banners.length,
@@ -163,17 +164,17 @@ class _HomeBody extends StatelessWidget {
                       crossAxisCount: isTV ? 4 : 2, // টিভি ভিউ হলে ৪টি কলাম দেখাবে
                       mainAxisSpacing: 16,
                       crossAxisSpacing: 16,
-                      childAspectRatio: isTV ? 1.3 : 1.1, // টিভি স্ক্রিনের এ্যাসপেক্ট রেশিও এডজাস্টমেন্ট
+                      childAspectRatio: isTV ? 1.3 : 1.1, // স্ক্রিন এডজাস্টমেন্ট রেশিও
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final channel = appState.channels[index];
                         final selected = appState.currentChannelIndex == index;
+                        
                         return FocusGlowButton(
                           label: channel.name,
-                          // চ্যানেল অবজেক্টে লোগো থাকলে তা ইমেজ উইজেট দিয়ে রেন্ডার করা হচ্ছে
-                          icon: channel.logoUrl != null ? null : Icons.play_circle_outline,
-                          imageWidget: channel.logoUrl != null
+                          // নতুন আপগ্রেড: লোগো URL থাকলে Image.network পাস হবে, না থাকলে ডিফল্ট আইকন যাবে
+                          icon: channel.logoUrl != null
                               ? Image.network(
                                   channel.logoUrl,
                                   fit: BoxFit.contain,
@@ -182,9 +183,9 @@ class _HomeBody extends StatelessWidget {
                                     return const Center(child: CircularProgressIndicator(strokeWidth: 2));
                                   },
                                   errorBuilder: (context, error, stackTrace) =>
-                                      const Icon(Icons.tv, size: 40, color: Colors.grey),
+                                      const Icon(Icons.tv, size: 30, color: Colors.grey),
                                 )
-                              : null,
+                              : Icons.play_circle_outline,
                           selected: selected,
                           trailing: Text(
                             channel.quality,
@@ -211,7 +212,7 @@ class _HomeBody extends StatelessWidget {
   }
 }
 
-// ── Banner card (সম্পূর্ণ 100% ফুল স্ক্রিন উইডথ এবং নেটওয়ার্ক ইমেজ সহ) ──────────────
+// ── Banner card (১০০% ফুল উইডথ এবং নেটওয়ার্ক ইমেজ সাপোর্ট সহ) ─────────────────────
 
 class _BannerCard extends StatelessWidget {
   const _BannerCard({required this.banner, required this.theme, required this.isTV});
@@ -222,14 +223,14 @@ class _BannerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ব্যানার অবজেক্ট থেকে লোগো/ব্যাকগ্রাউন্ড ইমেজের URL নেওয়া (আপনার API কী অনুযায়ী পরিবর্তন করে নিতে পারেন)
+    // API থেকে পাঠানো ব্যানার ইমেজের লিঙ্ক রিড করা
     final String? imageUrl = banner.imageUrl ?? banner.logoUrl;
 
     return Container(
-      width: double.infinity, // ফুল উইডথ নিশ্চিত করার জন্য
+      width: double.infinity, // সম্পূর্ণ স্ক্রিন জুড়ে থাকবে
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
-        // যদি ইমেজ থাকে তবে ব্যাকগ্রাউন্ড ইমেজ হিসেবে লোড হবে, না থাকলে গ্রেডিয়েন্ট কালার দেখাবে
+        // ছবি থাকলে ব্যাকগ্রাউন্ড কভার ইমেজ হিসেবে লোড হবে
         image: imageUrl != null
             ? DecorationImage(
                 image: NetworkImage(imageUrl),
@@ -238,10 +239,10 @@ class _BannerCard extends StatelessWidget {
             : null,
       ),
       child: Container(
-        // ইমেজের ওপর টেক্সট সহজে পড়ার জন্য কালো ডার্ক শ্যাডো/Overlay গ্রেডিয়েন্ট
+        // ইমেজের ওপর টেক্সট পরিষ্কার ফুটিয়ে তোলার জন্য ব্ল্যাক গ্রেডিয়েন্ট ওভারলে
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+            colors: [Colors.black.withOpacity(0.85), Colors.transparent],
             begin: Alignment.bottomCenter,
             end: Alignment.topCenter,
           ),
@@ -286,7 +287,7 @@ class _SectionHeader extends StatelessWidget {
       title,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.bold,
-            fontSize: isTV ? 22 : 16, // টিভির জন্য বড় হেডার
+            fontSize: isTV ? 22 : 16, // টিভির জন্য বড় টেক্সট
           ),
     );
   }
