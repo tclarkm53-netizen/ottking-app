@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart'; // ওয়েক লক ইম্পোর্ট করা হলো
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../providers/app_state.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
-  @override
+  @style
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
@@ -33,7 +33,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     
-    // স্ক্রিন অন রাখার ফিচারটি চালু করা হলো (ডিজাইনে কোনো প্রভাব ফেলবে না)
     WakelockPlus.enable();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -64,17 +63,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeChannelId = channel.id;
     });
 
+    // ── সাউন্ড বাগ ফিক্স করার মূল লজিক ──
+    // পুরনো কন্ট্রোলার সম্পূর্ণরূপে পজ, লিসেনার রিমুভ এবং ডিসপোজ নিশ্চিত করা
     if (_controller != null) {
       final oldCtrl = _controller!;
+      _controller = null; // নতুন রিকোয়েস্ট আসার আগেই রেফারেন্স খালি করা
+      
       if (_controllerListener != null) {
         oldCtrl.removeListener(_controllerListener!);
         _controllerListener = null;
       }
-      _controller = null;
+      
       try {
-        await oldCtrl.pause();
-      } catch (_) {}
-      await oldCtrl.dispose();
+        if (oldCtrl.value.isPlaying) {
+          await oldCtrl.pause(); // প্রথমে প্লে থামানো বাধ্যতামূলক
+        }
+        await oldCtrl.setVolume(0.0); // ব্যাকগ্রাউন্ডে যেন কোনোভাবেই শব্দ না আসে
+      } catch (e) {
+        debugPrint("Error pausing old controller: $e");
+      } finally {
+        // ফিউচার চেইন মেইনটেইন করে ডিসপোজ করা
+        oldCtrl.dispose(); 
+      }
     }
 
     final newController = VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
@@ -154,7 +164,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _exitPlayer() {
-    // প্লেয়ার থেকে বের হওয়ার সময় ওয়েক লক রিলিজ করা (যাতে ফোন নরমাললি লক হতে পারে)
     WakelockPlus.disable();
     
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -166,7 +175,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // স্ক্রিন পুরোপুরি বন্ধ হলে ওয়েক লক রিলিজ করা
     WakelockPlus.disable();
     
     if (_controller != null && _controllerListener != null) {
