@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart'; // ◄ ১. ওয়েভলক প্লাস ইম্পোর্ট
 
 import '../providers/app_state.dart';
 
@@ -28,20 +27,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     
+    // ফুলস্ক্রিন এবং ল্যান্ডস্কেপ ওরিয়েন্টেশন লক করা
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
 
+    // স্ক্রিন যাতে অফ না হয় তার জন্য নেটিভ ফ্ল্যাগ অন করা
+    _setScreenAwake(true);
+
     _initController();
     _startControlsTimer();
 
+    // অ্যান্ড্রয়েড টিভি রিমোট ফোকাস ইনিশিয়েট করা
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         FocusScope.of(context).requestFocus(_mainPlayerFocusNode);
       }
     });
+  }
+
+  // প্যাকেজ ছাড়া স্ক্রিন স্লিপ মোড কন্ট্রোল করার নেটিভ অ্যান্ড্রোয়েড মেথড
+  void _setScreenAwake(bool awake) {
+    if (awake) {
+      SystemChannels.platform.invokeMethod('Window.addFlags', 128); // 128 = FLAG_KEEP_SCREEN_ON
+    } else {
+      SystemChannels.platform.invokeMethod('Window.clearFlags', 128);
+    }
   }
 
   Future<void> _initController() async {
@@ -65,9 +78,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _controller!.initialize();
       await _controller!.play();
       _controller!.setLooping(true);
-
-      // ◄ ২. ভিডিও সফলভাবে প্লে হলে স্ক্রিন স্লিপ মোড অফ করে দেওয়া
-      WakelockPlus.enable(); 
+      
+      // ভিডিও সফলভাবে লোড হলে স্ক্রিন ওয়েক লক নিশ্চিত করা
+      _setScreenAwake(true);
       
     } catch (e) {
       debugPrint("OTT-KING Engine Player Crash Alert: $e");
@@ -102,9 +115,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // ◄ ৩. প্লেয়ার থেকে বের হয়ে গেলে স্ক্রিন লক রিলিজ করে দেওয়া
-    WakelockPlus.disable(); 
-
+    // স্ক্রিন থেকে বের হওয়ার সাথে সাথে ওয়েক লক রিলিজ এবং ওরিয়েন্টেশন রিসেট করা
+    _setScreenAwake(false); 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -118,6 +130,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _handleKeyEvent(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
 
+    // ওএসডি কন্ট্রোল ভিজিবিলিটি অন করা
     if (!_showControls) {
       setState(() => _showControls = true);
       _startControlsTimer();
@@ -136,10 +149,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (_controller != null && _controller!.value.isInitialized) {
         if (_controller!.value.isPlaying) {
           _controller!.pause();
-          WakelockPlus.disable(); // ভিডিও পজ করলে স্ক্রিন অফ হতে পারবে
+          _setScreenAwake(false); // ভিডিও পজ করলে স্ক্রিন অফ হতে পারবে
         } else {
           _controller!.play();
-          WakelockPlus.enable(); // ভিডিও আবার প্লে করলে স্ক্রিন অন থাকবে
+          _setScreenAwake(true); // প্লে করলে স্ক্রিন অলওয়েজ অন থাকবে
         }
         setState(() {}); 
         _startControlsTimer();
@@ -166,6 +179,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onTap: _toggleControls,
           child: Stack(
             children: [
+              // ── ১. ফুলস্ক্রীন ভিডিও ক্যানভাস ──
               if (controller != null && controller.value.isInitialized)
                 Positioned.fill(
                   child: Center(
@@ -176,6 +190,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
+              // ── ২. ওএসডি গ্রেডিয়েন্ট শ্যাডো ──
               if (_showControls)
                 Positioned.fill(
                   child: AnimatedContainer(
@@ -195,6 +210,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
+              // ── ৩. বাফারিং ইন্ডিকেটর ──
               if (isBuffer)
                 const Center(
                   child: Column(
@@ -213,6 +229,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
+              // ── ৪. টপ ওএসডি: চ্যানেল ইনফো বার ──
               if (_showControls)
                 Positioned(
                   top: 28,
@@ -261,6 +278,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
+              // ── ৫. বটম ওএসডি: প্লেব্যাক কন্ট্রোল ড্যাশবোর্ড ──
               if (_showControls)
                 Positioned(
                   bottom: 28,
@@ -296,10 +314,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                   if (controller != null && controller.value.isInitialized) {
                                     if (controller.value.isPlaying) {
                                       controller.pause();
-                                      WakelockPlus.disable();
+                                      _setScreenAwake(false);
                                     } else {
                                       controller.play();
-                                      WakelockPlus.enable();
+                                      _setScreenAwake(true);
                                     }
                                     setState(() {});
                                     _startControlsTimer();
@@ -326,6 +344,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
+              // ── ৬. প্রিমিয়াম চ্যানেল সুইচিং টোস্ট ওভারলে ──
               Positioned(
                 bottom: _showControls ? 100 : 28,
                 left: 28,
