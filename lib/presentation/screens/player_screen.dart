@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; // ◄ ১. ওয়েভলক প্লাস ইম্পোর্ট
 
 import '../providers/app_state.dart';
 
@@ -27,7 +28,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     
-    // ফুলস্ক্রিন এবং ইমার্সিভ মোড একটিভ করা (স্ট্যাটাস বার হাইড করা)
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -65,6 +65,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await _controller!.initialize();
       await _controller!.play();
       _controller!.setLooping(true);
+
+      // ◄ ২. ভিডিও সফলভাবে প্লে হলে স্ক্রিন স্লিপ মোড অফ করে দেওয়া
+      WakelockPlus.enable(); 
+      
     } catch (e) {
       debugPrint("OTT-KING Engine Player Crash Alert: $e");
     }
@@ -98,7 +102,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // স্ক্রিন এক্সিট করার সাথে সাথে মোবাইল ওরিয়েন্টেশন এবং UI বার ঠিক করা
+    // ◄ ৩. প্লেয়ার থেকে বের হয়ে গেলে স্ক্রিন লক রিলিজ করে দেওয়া
+    WakelockPlus.disable(); 
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -112,7 +118,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _handleKeyEvent(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
 
-    // ওএসডি কন্ট্রোল ভিজিবিলিটি রিফ্রেশ
     if (!_showControls) {
       setState(() => _showControls = true);
       _startControlsTimer();
@@ -129,8 +134,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                event.logicalKey == LogicalKeyboardKey.enter || 
                event.logicalKey == LogicalKeyboardKey.space) {
       if (_controller != null && _controller!.value.isInitialized) {
-        _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
-        setState(() {}); // UI আপডেট করে প্লে/পজ স্টেট দেখানোর জন্য
+        if (_controller!.value.isPlaying) {
+          _controller!.pause();
+          WakelockPlus.disable(); // ভিডিও পজ করলে স্ক্রিন অফ হতে পারবে
+        } else {
+          _controller!.play();
+          WakelockPlus.enable(); // ভিডিও আবার প্লে করলে স্ক্রিন অন থাকবে
+        }
+        setState(() {}); 
         _startControlsTimer();
       }
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft || 
@@ -155,7 +166,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           onTap: _toggleControls,
           child: Stack(
             children: [
-              // ── ১. ব্যাকগ্রাউন্ড সিনেমাটিক প্লেয়ার ক্যানভাস ──
               if (controller != null && controller.value.isInitialized)
                 Positioned.fill(
                   child: Center(
@@ -166,7 +176,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ২. ভিডিও ব্ল্যাক গ্রেডিয়েন্ট ওভারলে (কন্ট্রোল বার ফুটিয়ে তোলার জন্য) ──
               if (_showControls)
                 Positioned.fill(
                   child: AnimatedContainer(
@@ -186,7 +195,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৩. লাইভ স্ট্রিমিং বাফারিং ইন্ডিকেটর ──
               if (isBuffer)
                 const Center(
                   child: Column(
@@ -205,7 +213,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৪. টপ ওএসডি: চ্যানেল টাইটেল এবং লাইভ ব্যাজ ──
               if (_showControls)
                 Positioned(
                   top: 28,
@@ -239,7 +246,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444), // Live Red Badge
+                          color: const Color(0xFFEF4444), 
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Row(
@@ -254,7 +261,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৫. বটম ওএসডি: প্রফেশনাল কন্ট্রোল ড্যাশবোর্ড ──
               if (_showControls)
                 Positioned(
                   bottom: 28,
@@ -263,11 +269,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // কাস্টম টাইমলাইন বা লাইভ ইন্ডিকেটর বার
                       ClipRRect(
                         borderRadius: BorderRadius.circular(2),
                         child: const LinearProgressIndicator(
-                          value: 1.0, // লাইভ স্ট্রিমের জন্য সবসময় ফুল থাকবে
+                          value: 1.0, 
                           backgroundColor: Colors.white12,
                           valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
                           minHeight: 3,
@@ -279,7 +284,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         children: [
                           Row(
                             children: [
-                              // প্লে/পজ বাটন
                               IconButton(
                                 icon: Icon(
                                   (controller != null && controller.value.isPlaying) 
@@ -290,7 +294,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 ),
                                 onPressed: () {
                                   if (controller != null && controller.value.isInitialized) {
-                                    controller.value.isPlaying ? controller.pause() : controller.play();
+                                    if (controller.value.isPlaying) {
+                                      controller.pause();
+                                      WakelockPlus.disable();
+                                    } else {
+                                      controller.play();
+                                      WakelockPlus.enable();
+                                    }
                                     setState(() {});
                                     _startControlsTimer();
                                   }
@@ -316,7 +326,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৬. চ্যানেল সুইচের প্রিমিয়াম নোটিফিকেশন টোস্ট ──
               Positioned(
                 bottom: _showControls ? 100 : 28,
                 left: 28,
