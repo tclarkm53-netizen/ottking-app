@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart'; // ওয়েক লক ইম্পোর্ট করা হলো
 
 import '../providers/app_state.dart';
 
@@ -26,14 +27,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    // ফুল স্ক্রিন ল্যান্ডস্কেপ মোড অ্যাক্টিভেট করা
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
     
-    // প্রথমবার স্ক্রিন ওপেন হলে কন্ট্রোলার কল করা
+    // স্ক্রিন অন রাখার ফিচারটি চালু করা হলো (ডিজাইনে কোনো প্রভাব ফেলবে না)
+    WakelockPlus.enable();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _initController();
     });
@@ -42,11 +44,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // build মেথডের বাইরে সেফ উপায়ে AppState ট্র্যাক করা
     final oldAppState = _appState;
     _appState = context.watch<AppState>();
 
-    // যদি প্রোভাইডারের মাধ্যমে চ্যানেল চেঞ্জ হয় (যেমন রিমোটলি বা অন্য উইজেট থেকে)
     if (oldAppState != null && oldAppState.currentChannel.id != _appState!.currentChannel.id) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
     }
@@ -57,7 +57,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     final channel = _appState!.currentChannel;
 
-    // একই চ্যানেল অলরেডি প্লে হতে থাকলে পুনরায় লোড করার প্রয়োজন নেই
     if (_activeChannelId == channel.id && _controller != null) return;
 
     setState(() {
@@ -65,7 +64,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeChannelId = channel.id;
     });
 
-    // পুরনো কন্ট্রোলার এবং তার মেমোরি লিসেনার প্রফেশনাল উপায়ে রিলিজ করা
     if (_controller != null) {
       final oldCtrl = _controller!;
       if (_controllerListener != null) {
@@ -74,7 +72,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
       _controller = null;
       try {
-        await oldCtrl.setScreenOnWhilePlaying(false); // পুরনো ওয়েক লক রিলিজ
         await oldCtrl.pause();
       } catch (_) {}
       await oldCtrl.dispose();
@@ -89,10 +86,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         await newController.dispose();
         return;
       }
-
-      // ── ক্রিন লক হয়ে যাওয়া বন্ধ করার মূল লজিক ──
-      // এটি ভিডিও চলাকালীন ফোনের ডিসপ্লে লাইট অফ হতে দেবে না
-      await newController.setScreenOnWhilePlaying(true); 
 
       await newController.play();
       
@@ -125,7 +118,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // বাটন বা কীবোর্ড দিয়ে চ্যানেল পরিবর্তন
   void _safeChannelSwitch(int direction) {
     if (_appState == null) return;
     
@@ -135,7 +127,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
     
     _appState!.switchChannel(direction);
-    // নোট: didChangeDependencies নিজেই নতুন চ্যানেল ডিটেক্ট করে _initController কল করবে।
   }
 
   void _handleKey(KeyEvent event) {
@@ -163,10 +154,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _exitPlayer() {
-    // প্লেয়ার থেকে বের হয়ে যাওয়ার আগে ওয়েক লক রিলিজ করা
-    _controller?.setScreenOnWhilePlaying(false);
+    // প্লেয়ার থেকে বের হওয়ার সময় ওয়েক লক রিলিজ করা (যাতে ফোন নরমাললি লক হতে পারে)
+    WakelockPlus.disable();
     
-    // ফোন স্বাভাবিক স্ক্রিন মোড এবং পোট্রেট ওরিয়েন্টেশনে ফিরিয়ে নেওয়া
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -176,8 +166,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
-    // স্ক্রিন সম্পূর্ণ ডিসপোজ বা বন্ধ হলে ওয়েক লক রিলিজ ও মেমোরি ফ্রি করা
-    _controller?.setScreenOnWhilePlaying(false);
+    // স্ক্রিন পুরোপুরি বন্ধ হলে ওয়েক লক রিলিজ করা
+    WakelockPlus.disable();
+    
     if (_controller != null && _controllerListener != null) {
       _controller!.removeListener(_controllerListener!);
     }
@@ -201,8 +192,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final currentChannel = _appState!.currentChannel;
     final controller = _controller;
     final initialized = controller != null && controller.value.isInitialized;
-    
-    // লাইভ টিভি বা আইপিটিভির ক্ষেত্রে duration সাধারণত 0 বা infinite থাকে, সেটি ডিটেক্ট করা
     final isLive = controller?.value.duration == Duration.zero || controller?.value.duration == null;
 
     return KeyboardListener(
@@ -314,7 +303,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যজ + প্রোগ্রেস বার) ──────────────
+              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যাজ + প্রোগ্রেস বার) ──────────────
               if (_showControls && initialized && !_isLoading)
                 Positioned(
                   left: 0,
@@ -357,7 +346,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
                               ],
                             ),
                           ),
-                          // যদি লাইভ টিভি না হয়ে কোনো অন-ডিমান্ড বা সাধারণ ভিডিও ফাইল হয়, তবেই প্রোগ্রেস বার দেখাবে
                           if (!isLive) ...[
                             Text(
                               _formatDuration(controller.value.position),
