@@ -1,5 +1,6 @@
 // lib/presentation/screens/player_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -15,35 +16,45 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final FocusNode _focusNode = FocusNode(debugLabel: 'player-root');
+  final FocusNode _mainPlayerFocusNode = FocusNode(debugLabel: 'player-root');
   VideoPlayerController? _controller;
   String? _activeChannelId;
   bool _isInitializing = false;
+  bool _showControls = true;
+  Timer? _controlsTimer;
 
   @override
   void initState() {
     super.initState();
-    _initController();
+    
+    // ফুলস্ক্রিন এবং ইমার্সিভ মোড একটিভ করা (স্ট্যাটাস বার হাইড করা)
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
 
-    // স্ক্রিন ওপেন হওয়ার সাথে সাথে অ্যান্ড্রয়েড টিভি রিমোটের ফোকাস একটিভ করার জন্য
+    _initController();
+    _startControlsTimer();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        FocusScope.of(context).requestFocus(_focusNode);
+        FocusScope.of(context).requestFocus(_mainPlayerFocusNode);
       }
     });
   }
 
   Future<void> _initController() async {
     if (_isInitializing) return;
-    
+
     final appState = context.read<AppState>();
     final url = appState.currentChannel.streamUrl;
 
     setState(() {
       _isInitializing = true;
+      _activeChannelId = appState.currentChannel.id;
     });
 
-    // মেমোরি লিক এবং ব্যাকগ্রাউন্ড ক্র্যাশ আটকাতে আগের কন্ট্রোলার সম্পূর্ণ ডিসপোজ করা
     if (_controller != null) {
       await _controller!.dispose();
       _controller = null;
@@ -53,48 +64,78 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await _controller!.initialize();
       await _controller!.play();
+      _controller!.setLooping(true);
     } catch (e) {
-      debugPrint("OTT-KING Video Player Error: $e");
+      debugPrint("OTT-KING Engine Player Crash Alert: $e");
     }
 
     if (!mounted) return;
 
-    _activeChannelId = appState.currentChannel.id;
     setState(() {
       _isInitializing = false;
     });
   }
 
   void _syncControllerIfNeeded(AppState appState) {
-    if (_activeChannelId == appState.currentChannel.id) {
-      return;
-    }
-
+    if (_activeChannelId == appState.currentChannel.id) return;
     _activeChannelId = appState.currentChannel.id;
-    // Build ফেজের বাইরে সেফলি চ্যানেল রি-ইনিশিয়ালের জন্য microtask ব্যবহার করা হয়েছে
     Future.microtask(() => _initController());
+  }
+
+  void _startControlsTimer() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted && _showControls) {
+        setState(() => _showControls = false);
+      }
+    });
+  }
+
+  void _toggleControls() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startControlsTimer();
   }
 
   @override
   void dispose() {
+    // স্ক্রিন এক্সিট করার সাথে সাথে মোবাইল ওরিয়েন্টেশন এবং UI বার ঠিক করা
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+    ]);
+    _controlsTimer?.cancel();
     _controller?.dispose();
-    _focusNode.dispose();
+    _mainPlayerFocusNode.dispose();
     super.dispose();
   }
 
   void _handleKeyEvent(KeyEvent event, AppState appState) {
     if (event is! KeyDownEvent) return;
 
-    // রিমোটের আপ/ডাউন বাটন দিয়ে লাইভ চ্যানেল পরিবর্তন (Zapping)
+    // ওএসডি কন্ট্রোল ভিজিবিলিটি রিফ্রেশ
+    if (!_showControls) {
+      setState(() => _showControls = true);
+      _startControlsTimer();
+      if (event.logicalKey == LogicalKeyboardKey.select || event.logicalKey == LogicalKeyboardKey.enter) {
+        return; 
+      }
+    }
+
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       appState.switchChannel(-1);
     } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       appState.switchChannel(1);
-    } 
-    // রিমোটের ব্যাক বা লেফট বাটন প্রেস করলে মেমোরি ফ্রি করে হোমে ফিরে যাওয়া
-    else if (event.logicalKey == LogicalKeyboardKey.arrowLeft || 
-             event.logicalKey == LogicalKeyboardKey.escape) {
-      Navigator.pop(context); 
+    } else if (event.logicalKey == LogicalKeyboardKey.select || 
+               event.logicalKey == LogicalKeyboardKey.enter || 
+               event.logicalKey == LogicalKeyboardKey.space) {
+      if (_controller != null && _controller!.value.isInitialized) {
+        _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
+        setState(() {}); // UI আপডেট করে প্লে/পজ স্টেট দেখানোর জন্য
+        _startControlsTimer();
+      }
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft || 
+               event.logicalKey == LogicalKeyboardKey.escape) {
+      Navigator.pop(context);
     }
   }
 
@@ -103,104 +144,212 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final appState = context.watch<AppState>();
     _syncControllerIfNeeded(appState);
     final controller = _controller;
+    final isBuffer = _isInitializing || (controller != null && controller.value.isBuffering);
 
     return KeyboardListener(
-      focusNode: _focusNode,
+      focusNode: _mainPlayerFocusNode,
       onKeyEvent: (event) => _handleKeyEvent(event, appState),
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Stack(
-          children: [
-            // ── ১. ফুলস্ক্রীন লাইভ ভিডিও প্লেয়ার ──
-            if (controller != null && controller.value.isInitialized && !_isInitializing)
-              Positioned.fill(
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: controller.value.aspectRatio,
-                    child: VideoPlayer(controller),
+        body: GestureDetector(
+          onTap: _toggleControls,
+          child: Stack(
+            children: [
+              // ── ১. ব্যাকগ্রাউন্ড সিনেমাটিক প্লেয়ার ক্যানভাস ──
+              if (controller != null && controller.value.isInitialized)
+                Positioned.fill(
+                  child: Center(
+                    child: AspectRatio(
+                      aspectRatio: controller.value.aspectRatio,
+                      child: VideoPlayer(controller),
+                    ),
                   ),
                 ),
-              )
-            else
-              // চ্যানেল লোডিং বা বাফারিং ইন্ডিকেটর
-              const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)), // ওটিটি প্রিমিয়াম সায়ান থিম
-                ),
-              ),
 
-            // ── ২. ওএসডি (On-Screen Display): লাইভ চ্যানেল ইনফো বার ──
-            Positioned(
-              left: 24,
-              top: 24,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withOpacity(0.08)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF22C55E), // লাইভ স্ট্রিমিং গ্রিন ডট
-                        shape: BoxShape.circle,
+              // ── ২. ভিডিও ব্ল্যাক গ্রেডিয়েন্ট ওভারলে (কন্ট্রোল বার ফুটিয়ে তোলার জন্য) ──
+              if (_showControls)
+                Positioned.fill(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withOpacity(0.7),
+                          Colors.transparent,
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.85),
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '${appState.currentChannel.name} • ${appState.currentChannel.quality.toUpperCase()}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // ── ৩. বটম ওএসডি: চ্যানেল সুইচের প্রিমিয়াম নোটিফিকেশন Overlay ──
-            Positioned(
-              left: 24,
-              right: 24,
-              bottom: 24,
-              child: AnimatedOpacity(
-                opacity: appState.showToast ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 250),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A).withOpacity(0.9), // ওটিটি ডার্ক ব্যাকগ্রাউন্ড
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.3), width: 1),
                   ),
-                  child: Row(
+                ),
+
+              // ── ৩. লাইভ স্ট্রিমিং বাফারিং ইন্ডিকেটর ──
+              if (isBuffer)
+                const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.bolt_rounded, color: Color(0xFF06B6D4), size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          appState.toastMessage,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                      CircularProgressIndicator(
+                        strokeWidth: 4,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
+                      ),
+                      SizedBox(height: 14),
+                      Text(
+                        'Optimizing Stream...',
+                        style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 0.5),
+                      )
+                    ],
+                  ),
+                ),
+
+              // ── ৪. টপ ওএসডি: চ্যানেল টাইটেল এবং লাইভ ব্যাজ ──
+              if (_showControls)
+                Positioned(
+                  top: 28,
+                  left: 28,
+                  right: 28,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+                            onPressed: () => Navigator.pop(context),
                           ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                appState.currentChannel.name,
+                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              Text(
+                                'Streaming Quality: ${appState.currentChannel.quality.toUpperCase()}',
+                                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444), // Live Red Badge
+                          borderRadius: BorderRadius.circular(6),
                         ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.radar_rounded, color: Colors.white, size: 14),
+                            SizedBox(width: 6),
+                            Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+
+              // ── ৫. বটম ওএসডি: প্রফেশনাল কন্ট্রোল ড্যাশবোর্ড ──
+              if (_showControls)
+                Positioned(
+                  bottom: 28,
+                  left: 28,
+                  right: 28,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // কাস্টম টাইমলাইন বা লাইভ ইন্ডিকেটর বার
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: const LinearProgressIndicator(
+                          value: 1.0, // লাইভ স্ট্রিমের জন্য সবসময় ফুল থাকবে
+                          backgroundColor: Colors.white12,
+                          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)),
+                          minHeight: 3,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              // প্লে/পজ বাটন
+                              IconButton(
+                                icon: Icon(
+                                  (controller != null && controller.value.isPlaying) 
+                                      ? Icons.pause_circle_filled_rounded 
+                                      : Icons.play_circle_filled_rounded,
+                                  color: const Color(0xFF06B6D4),
+                                  size: 42,
+                                ),
+                                onPressed: () {
+                                  if (controller != null && controller.value.isInitialized) {
+                                    controller.value.isPlaying ? controller.pause() : controller.play();
+                                    setState(() {});
+                                    _startControlsTimer();
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Zapping System Active (Press ▲ ▼ to change channels)',
+                                style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12, fontStyle: FontStyle.italic),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              const Icon(Icons.hd_rounded, color: Colors.white60, size: 22),
+                              const SizedBox(width: 16),
+                              Icon(Icons.fullscreen_rounded, color: Colors.white.withOpacity(0.8), size: 26),
+                            ],
+                          )
+                        ],
                       ),
                     ],
                   ),
                 ),
+
+              // ── ৬. চ্যানেল সুইচের প্রিমিয়াম নোটিফিকেশন টোস্ট ──
+              Positioned(
+                bottom: _showControls ? 100 : 28,
+                left: 28,
+                right: 28,
+                child: AnimatedOpacity(
+                  opacity: appState.showToast ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.4)),
+                        boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 12, offset: const Offset(0, 4))],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.bolt_rounded, color: Color(0xFF06B6D4), size: 20),
+                          const SizedBox(width: 10),
+                          Text(
+                            appState.toastMessage,
+                            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
