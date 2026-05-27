@@ -198,10 +198,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: isTV ? 4 : 2, // টিভিতে ৪ কলাম, মোবাইলে ২ কলাম
-                      mainAxisSpacing: 14,
-                      crossAxisSpacing: 14,
-                      childAspectRatio: isTV ? 1.3 : 1.15,
+                      crossAxisCount: isTV ? 5 : 4, // 👈 মোবাইলে ৪ টি এবং টিভিতে ৫ টি কলাম করা হলো
+                      mainAxisSpacing: isTV ? 14 : 8,
+                      crossAxisSpacing: isTV ? 14 : 8,
+                      childAspectRatio: isTV ? 1.3 : 0.85, // 👈 মোবাইল গ্রিডের অনুপাত ন্যারো কার্ডের জন্য সেট করা হলো
                     ),
                     itemCount: appState.channels.length,
                     itemBuilder: (context, index) {
@@ -214,14 +214,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         icon: Icons.play_arrow_rounded,
                         selected: selected,
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                           decoration: BoxDecoration(
                             color: const Color(0xFF06B6D4).withOpacity(0.12),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             channel.quality.toUpperCase(),
-                            style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 10, fontWeight: FontWeight.bold),
+                            style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 8, fontWeight: FontWeight.bold),
                           ),
                         ),
                         onTap: () {
