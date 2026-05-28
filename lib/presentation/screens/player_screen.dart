@@ -11,7 +11,7 @@ import '../providers/app_state.dart';
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
-  @style
+  @override
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
