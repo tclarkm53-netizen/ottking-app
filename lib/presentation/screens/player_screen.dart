@@ -27,7 +27,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   
   Timer? _controlsTimer;
 
-  // ── নম্বর কী ফিচারের জন্য ভ্যারিয়েবল ──
+  // ── নম্বর কী ফিচারের জন্য ভ্যারিয়েবল ──
   String _typedChannelNumber = ""; 
   Timer? _numberInputTimer;        
 
@@ -40,7 +40,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     
-    WakelockPlus.enable();
+    _enableWakelock(); // ওয়েক লক চালুর কাস্টম নিরাপদ মেথড
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -55,6 +55,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _appState = context.watch<AppState>();
+  }
+
+  // ── স্ক্রিন অন রাখার জন্য শতভাগ নিরাপদ ওয়েক লক হ্যান্ডলার ──
+  void _enableWakelock() async {
+    try {
+      // ফ্লাটার ইঞ্জিনকে ফোর্স করা যাতে অ্যান্ড্রয়েড নেটিভ উইন্ডো লেভেলে স্ক্রিন অন রাখে
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      bool isEnabled = await WakelockPlus.enabled;
+      if (!isEnabled) {
+        await WakelockPlus.enable();
+      }
+    } catch (e) {
+      debugPrint("Wakelock activation failed: $e");
+    }
   }
 
   void _startControlsTimer() {
@@ -130,6 +144,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       await newController.play();
       
+      // ⚡ ফিক্স: ভিডিও প্লে হওয়ার ঠিক পরপরই ওয়েক লক আবার রি-এনফোর্স করা হলো
+      _enableWakelock();
+      
       _controllerListener = () {
         if (mounted) setState(() {});
       };
@@ -151,7 +168,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         messenger.clearSnackBars();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('${channel.name} লোড হতে ব্যর্থ হয়েছে।'),
+            content: Text('${channel.name} লোড হতে ব্যর্থ হয়েছে।'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -185,13 +202,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  // ── নির্দিষ্ট নম্বরে চ্যানেল পরিবর্তন করার মূল লজিক ──
   void _switchToSpecificChannelNumber(int targetNumber) async {
     if (_appState == null) return;
 
     final allChannels = _appState!.channels; 
-    
-    // ইউজার ১ চাপলে ইনডেক্স হবে ০ (0-based Indexing)
     int targetIndex = targetNumber - 1;
 
     if (targetIndex >= 0 && targetIndex < allChannels.length) {
@@ -210,7 +224,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         } catch (_) {}
       }
 
-      // AppState-এর নতুন মেথডটি এখানে কল করা হলো
       _appState!.selectChannelByIndex(targetIndex); 
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -221,7 +234,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       messenger.clearSnackBars();
       messenger.showSnackBar(
         SnackBar(
-          content: Text('$targetNumber নম্বরে কোনো চ্যানেল পাওয়া যায়নি।'),
+          content: Text('$targetNumber নম্বরে কোনো চ্যানেল পাওয়া যায়নি।'),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -236,7 +249,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _typedChannelNumber += number; 
     });
 
-    // ১.৫ সেকেন্ড পর্যন্ত ইউজার আর কোনো বাটন না চাপলে চ্যানেল লোড হবে
     _numberInputTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted && _typedChannelNumber.isNotEmpty) {
         final targetNum = int.tryParse(_typedChannelNumber);
@@ -256,13 +268,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
     final keyLabel = event.logicalKey.keyLabel;
     
-    // টিভি রিমোটের ডিজিটাল ০-৯ নম্বর ইনপুট সনাক্তকরণ
     if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
       _handleNumberInput(keyLabel);
       return;
     }
 
-    // Arrow Up/Down চাপলে সাথে সাথে সরাসরি চ্যানেল পরিবর্তন
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       _safeChannelSwitch(-1);
       return;
@@ -282,10 +292,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _startControlsTimer();
 
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-        event.logicalKey == LogicalKeyboardKey.escape) {
+        event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.goBack) {
       _exitPlayer();
     } else if (event.logicalKey == LogicalKeyboardKey.space ||
-        event.logicalKey == LogicalKeyboardKey.enter) {
+        event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.select) {
       _togglePlayPause();
     }
   }
@@ -295,7 +307,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final ctrl = _controller;
     if (ctrl == null) return;
     setState(() {
-      ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
+      if (ctrl.value.isPlaying) {
+        ctrl.pause();
+      } else {
+        ctrl.play();
+        _enableWakelock(); // ভিডিও পুনরায় প্লে করার সময় ওয়েক লক বুস্ট
+      }
     });
     _startControlsTimer();
   }
@@ -303,7 +320,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void _exitPlayer() async {
     _controlsTimer?.cancel();
     _numberInputTimer?.cancel();
-    WakelockPlus.disable();
+    
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {}
     
     if (_controller != null) {
       try {
@@ -322,7 +342,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void dispose() {
     _controlsTimer?.cancel();
     _numberInputTimer?.cancel();
-    WakelockPlus.disable();
+    
+    try {
+      WakelockPlus.disable();
+    } catch (_) {}
     
     if (_controller != null && _controllerListener != null) {
       _controller!.removeListener(_controllerListener!);
@@ -505,7 +528,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৫. চ্যানেল সুইচ টোস্ট (AppState থেকে ট্রিগার হয়) ──────────────────────
+              // ── ৫. চ্যানেল সুইচ টোস্ট ──────────────────────
               Positioned(
                 left: 24, right: 24, bottom: _showControls ? 70 : 24,
                 child: AnimatedOpacity(
