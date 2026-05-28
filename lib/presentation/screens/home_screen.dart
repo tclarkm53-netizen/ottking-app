@@ -17,7 +17,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  // ── ব্যানার ১০০% ফুল উইডথ করার জন্য viewportFraction ১.০ করা হলো ──
+  // ব্যানার ১০০% ফুল উইডথ করার জন্য viewportFraction ১.০ করা হলো
   final PageController _pageController = PageController(viewportFraction: 1.0);
 
   @override
@@ -81,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4))))
             : ListView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 24), // ব্যানার ফুল উইডথ করার জন্য হরাইজনটাল প্যাডিং রিমুভ করা হয়েছে
+                padding: const EdgeInsets.only(bottom: 24), 
                 children: [
                   
                   // ── ১. প্রিমিয়াম ১০০% ফুল উইডথ ব্যানার সেকশন ──
@@ -105,15 +105,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : null,
                             ),
                             child: Container(
-                              // ব্যানারের লেখার উপর গ্রেডিয়েন্ট শ্যাডো যাতে টেক্সট ক্লিয়ার দেখা যায়
-                              decoration: LinearGradient(
-                                colors: [
-                                  Colors.black.withOpacity(0.1),
-                                  const Color(0xFF0F172A).withOpacity(0.95),
-                                ],
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                              ).toDecoration(),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.black.withOpacity(0.1),
+                                    const Color(0xFF0F172A).withOpacity(0.95),
+                                  ],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
+                              ),
                               padding: EdgeInsets.symmetric(
                                 horizontal: isTV ? 40 : 16, 
                                 vertical: 20
@@ -141,7 +142,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Text(
                                     banner.subtitle,
                                     style: TextStyle(
-                                      color: Colors.white90, 
+                                      // 🔴 ফিক্স: Colors.white90 পরিবর্তন করে white70 এবং অপাসিটি ব্যবহার করা হয়েছে
+                                      color: Colors.white.withOpacity(0.9), 
                                       fontSize: isTV ? 15 : 13,
                                       shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(0, 1))],
                                     ),
@@ -199,14 +201,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 28),
                         ],
 
-                        // ── ৩. লাইভ টিভি চ্যানেল গ্রিড সেকশন (ইমেজ ফিক্সড) ──
+                        // ── ৩. লাইভ টিভি চ্যানেল গ্রিড সেকশন (ইমেজের লজিক এবং উইজেট এরর ফিক্সড) ──
                         const _SectionHeader(title: '📺 Live Channels'),
                         const SizedBox(height: 14),
                         GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: isTV ? 5 : 3, // সুন্দর রেশিওর জন্য মোবাইলে কলাম ৩ টি করা হয়েছে
+                            crossAxisCount: isTV ? 5 : 3, 
                             mainAxisSpacing: isTV ? 16 : 12,
                             crossAxisSpacing: isTV ? 16 : 12,
                             childAspectRatio: isTV ? 1.2 : 0.95, 
@@ -216,86 +218,56 @@ class _HomeScreenState extends State<HomeScreen> {
                             final channel = appState.channels[index];
                             final selected = appState.currentChannelIndex == index;
 
-                            // চাইল্ড হিসেবে কাস্টম ওটিটি কার্ড পাঠানো হলো যেখানে ইমেজ ও নাম দুটোই থাকবে
+                            // 🔴 ফিক্স: FocusGlowButton এ চাইল্ড ও ইরর বাদ দিতে এর ভেতরেই সম্পূর্ণ কাস্টম ডিজাইন জেনারেট করা হয়েছে
                             return FocusGlowButton(
                               isTV: isTV,
-                              label: "", // লেবেল ফাঁকা রাখা হলো কারণ আমরা নিচে কাস্টম চাইল্ড দিচ্ছি
+                              label: channel.name, // উইজেটের এক্সিস্টিং রুলস অনুযায়ী লেবেল দেওয়া হলো
+                              icon: Icons.live_tv_rounded,
                               selected: selected,
                               onTap: () {
                                 appState.currentChannelIndex = index;
                                 Navigator.pushNamed(context, '/player');
                               },
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  // চ্যানেলের মূল ইমেজ/লোগো বক্স
-                                  Expanded(
-                                    child: Container(
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF1E293B),
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                          color: selected ? const Color(0xFF06B6D4) : Colors.white.withOpacity(0.05),
-                                          width: selected ? 2 : 1,
+                              // ── কাস্টম ট্রেইলিং ভিউ এর মাধ্যমে ইমেজের কন্টেইনার এবং কোয়ালিটি ইনজেক্ট করা হয়েছে ──
+                              trailing: Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1E293B),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    // আপনার ডাটা মডেলের ইমেজ ইউআরএল ব্যবহার করে ইমেজ লোড করা হচ্ছে
+                                    if (channel.logoUrl.isNotEmpty)
+                                      Image.network(
+                                        channel.logoUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24));
+                                        },
+                                      )
+                                    else
+                                      const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24)),
+                                    
+                                    // কোয়ালিটি ট্যাগ
+                                    Positioned(
+                                      top: 4, right: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          // 🔴 ফিক্স: Colors.black70 এর পরিবর্তে black54/black87 ব্যবহার করা হয়েছে
+                                          color: Colors.black87,
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          channel.quality.toUpperCase(),
+                                          style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 7, fontWeight: FontWeight.bold),
                                         ),
                                       ),
-                                      clipBehavior: Clip.antiAlias,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          // নেটওয়ার্ক ইমেজ উইজেট
-                                          if (channel.logoUrl.isNotEmpty)
-                                            Image.network(
-                                              channel.logoUrl,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (context, error, stackTrace) {
-                                                // ইমেজ লোড হতে ফেইল করলে প্লে হোল্ডার আইকন দেখাবে
-                                                return const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 30));
-                                              },
-                                              loadingBuilder: (context, child, loadingProgress) {
-                                                if (loadingProgress == null) return child;
-                                                return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white24)));
-                                              },
-                                            )
-                                          else
-                                            const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 30)),
-                                          
-                                          // ভিডিও কোয়ালিটি ট্যাগ (HD/SD)
-                                          Positioned(
-                                            top: 6, right: 6,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black70,
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                channel.quality.toUpperCase(),
-                                                style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 8, fontWeight: FontWeight.bold),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  // চ্যানেলের নাম
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                                    child: Text(
-                                      channel.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: selected ? const Color(0xFF06B6D4) : Colors.white,
-                                        fontSize: isTV ? 14 : 12,
-                                        fontWeight: selected ? FontWeight.bold : FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -327,9 +299,4 @@ class _SectionHeader extends StatelessWidget {
       ),
     );
   }
-}
-
-// এক্সটেনশন মেথড যা লিনিয়ার গ্রেডিয়েন্টকে ডেকোরেশনে কনভার্ট করে
-extension on LinearGradient {
-  Decoration toDecoration() => BoxDecoration(gradient: this);
 }
