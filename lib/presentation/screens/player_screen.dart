@@ -35,20 +35,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     WakelockPlus.enable();
 
+    // প্রথমবার স্ক্রিনে ঢোকার সময় ভিডিও প্লে হবে
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _initController();
+      if (mounted) {
+        _appState = Provider.of<AppState>(context, listen: false);
+        _initController();
+      }
     });
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final oldAppState = _appState;
+    // এই মেথড থেকে মেমোরি কনফ্লিক্ট এড়াতে _initController() এর কলটি রিমুভ করা হয়েছে।
     _appState = context.watch<AppState>();
-
-    if (oldAppState != null && oldAppState.currentChannel.id != _appState!.currentChannel.id) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _initController());
-    }
   }
 
   Future<void> _initController() async {
@@ -56,6 +56,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     final channel = _appState!.currentChannel;
 
+    // যদি অলরেডি এই চ্যানেলটি প্লে হতে থাকে, তবে নতুন করে লোড করার দরকার নেই
     if (_activeChannelId == channel.id && _controller != null) return;
 
     setState(() {
@@ -63,11 +64,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeChannelId = channel.id;
     });
 
-    // ── সাউন্ড বাগ ফিক্স করার মূল লজিক ──
-    // পুরনো কন্ট্রোলার সম্পূর্ণরূপে পজ, লিসেনার রিমুভ এবং ডিসপোজ নিশ্চিত করা
+    // ১. পুরনো কন্ট্রোলারকে সম্পূর্ণরূপে স্টপ, ভলিউম জিরো এবং ডিসপোজ করা
     if (_controller != null) {
       final oldCtrl = _controller!;
-      _controller = null; // নতুন রিকোয়েস্ট আসার আগেই রেফারেন্স খালি করা
+      _controller = null; // নতুন অবজেক্ট তৈরির আগে রেফারেন্স কাটা বাধ্যতামূলক
       
       if (_controllerListener != null) {
         oldCtrl.removeListener(_controllerListener!);
@@ -75,18 +75,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
       
       try {
+        await oldCtrl.setVolume(0.0);
         if (oldCtrl.value.isPlaying) {
-          await oldCtrl.pause(); // প্রথমে প্লে থামানো বাধ্যতামূলক
+          await oldCtrl.pause();
         }
-        await oldCtrl.setVolume(0.0); // ব্যাকগ্রাউন্ডে যেন কোনোভাবেই শব্দ না আসে
       } catch (e) {
-        debugPrint("Error pausing old controller: $e");
+        debugPrint("Error stopping old controller: $e");
       } finally {
-        // ফিউচার চেইন মেইনটেইন করে ডিসপোজ করা
-        oldCtrl.dispose(); 
+        oldCtrl.dispose();
       }
     }
 
+    // ২. নতুন চ্যানেলের কন্ট্রোলার তৈরি ও প্লে করা
     final newController = VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
 
     try {
@@ -120,7 +120,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         messenger.clearSnackBars();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('${channel.name} চ্যানেলটি বর্তমানে অফলাইন আছে।'),
+            content: Text('${channel.name} লোড হতে ব্যর্থ হয়েছে।'),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -128,15 +128,32 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _safeChannelSwitch(int direction) {
+  // চ্যানেল পরিবর্তনের মূল ফাংশন (যা বাটন ও রিমোট কী দুই জায়গাতেই কাজ করবে)
+  void _safeChannelSwitch(int direction) async {
     if (_appState == null) return;
     
+    // প্রথমে বর্তমান রানিং প্লেয়ারটিকে এখানেই পজ ও মিউট করে দিন যাতে সাউন্ড লিক না হয়
+    if (_controller != null) {
+      try {
+        _controller!.removeListener(_controllerListener!);
+        _controllerListener = null;
+        await _controller!.setVolume(0.0);
+        await _controller!.pause();
+      } catch (_) {}
+    }
+
     setState(() {
       _isLoading = true; 
       _activeChannelId = null;
     });
     
+    // প্রোভাইডারের মাধ্যমে চ্যানেল চেঞ্জ করুন
     _appState!.switchChannel(direction);
+
+    // ফ্রেম আপডেট হওয়ার সাথে সাথে সাথে নতুন চ্যানেলটি প্লে করা শুরু করুন
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _initController();
+    });
   }
 
   void _handleKey(KeyEvent event) {
@@ -163,9 +180,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
-  void _exitPlayer() {
+  void _exitPlayer() async {
     WakelockPlus.disable();
     
+    if (_controller != null) {
+      try {
+        await _controller!.pause();
+      } catch (_) {}
+    }
+
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
@@ -213,7 +236,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার (Full Stretch) ──────────────────────
+              // ── ১. ভিডিও লেয়ার ──────────────────────
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
@@ -230,18 +253,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: CircularProgressIndicator(color: Colors.white),
                 ),
 
-              // ── ২. টপ বার (চ্যানেল ইনফো ও ক্লোজ বাটন) ────────────────────────
+              // ── ২. টপ বার ────────────────────────
               if (_showControls)
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
+                  left: 0, right: 0, top: 0,
                   child: SafeArea(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.35),
-                      ),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.35)),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -273,7 +292,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৩. সেন্টার কন্ট্রোলস (চ্যানেল সুইচ < > এবং প্লে-পজ) ─────────────────
+              // ── ৩. সেন্টার কন্ট্রোলস ─────────────────
               if (_showControls)
                 Center(
                   child: Row(
@@ -287,12 +306,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       GestureDetector(
                         onTap: _togglePlayPause,
                         child: Container(
-                          width: 65,
-                          height: 65,
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
+                          width: 65, height: 65,
+                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                           child: Icon(
                             initialized && !_isLoading && controller.value.isPlaying
                                 ? Icons.pause
@@ -311,12 +326,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৪. মোবাইল বটম কন্ট্রোল বার (LIVE ব্যাজ + প্রোগ্রেস বার) ──────────────
+              // ── ৪. মোবাইল বটম কন্ট্রোল বার ──────────────
               if (_showControls && initialized && !_isLoading)
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
+                  left: 0, right: 0, bottom: 0,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     color: Colors.black54,
@@ -344,37 +357,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
                                 SizedBox(width: 5),
                                 Text(
                                   'LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white, 
-                                    fontSize: 10, 
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5
-                                  ),
+                                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                                 ),
                               ],
                             ),
                           ),
                           if (!isLive) ...[
-                            Text(
-                              _formatDuration(controller.value.position),
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
+                            Text(_formatDuration(controller.value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
                             Expanded(
                               child: VideoProgressIndicator(
                                 controller,
                                 allowScrubbing: true,
-                                colors: const VideoProgressColors(
-                                  playedColor: Colors.red,
-                                  bufferedColor: Colors.white24,
-                                  backgroundColor: Colors.white12,
-                                ),
+                                colors: const VideoProgressColors(playedColor: Colors.red, bufferedColor: Colors.white24, backgroundColor: Colors.white12),
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               ),
                             ),
-                            Text(
-                              _formatDuration(controller.value.duration),
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
+                            Text(_formatDuration(controller.value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ] else
                             const Expanded(child: SizedBox.shrink()),
                         ],
@@ -385,9 +383,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
               // ── ৫. চ্যানেল সুইচ টোস্ট ───────────────────────────────────────
               Positioned(
-                left: 24,
-                right: 24,
-                bottom: _showControls ? 70 : 24,
+                left: 24, right: 24, bottom: _showControls ? 70 : 24,
                 child: AnimatedOpacity(
                   opacity: _appState!.showToast ? 1 : 0,
                   duration: const Duration(milliseconds: 200),
