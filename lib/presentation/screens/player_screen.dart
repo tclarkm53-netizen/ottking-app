@@ -1,5 +1,6 @@
 // lib/presentation/screens/player_screen.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _showControls = true;
   bool _isLoading = false;
   AppState? _appState; 
+  
+  Timer? _controlsTimer;
+
+  // ── নম্বর কী ফিচারের জন্য ভ্যারিয়েবল ──
+  String _typedChannelNumber = ""; 
+  Timer? _numberInputTimer;        
 
   @override
   void initState() {
@@ -35,11 +42,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     WakelockPlus.enable();
 
-    // প্রথমবার স্ক্রিনে ঢোকার সময় ভিডিও প্লে হবে
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _appState = Provider.of<AppState>(context, listen: false);
         _initController();
+        _startControlsTimer();
       }
     });
   }
@@ -47,8 +54,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // এই মেথড থেকে মেমোরি কনফ্লিক্ট এড়াতে _initController() এর কলটি রিমুভ করা হয়েছে।
     _appState = context.watch<AppState>();
+  }
+
+  void _startControlsTimer() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _showControls && _typedChannelNumber.isEmpty) {
+        setState(() {
+          _showControls = false;
+        });
+      }
+    });
+  }
+
+  void _toggleControlsVisibility() {
+    setState(() {
+      _showControls = !_showControls;
+    });
+    if (_showControls) {
+      _startControlsTimer();
+    }
   }
 
   Future<void> _initController() async {
@@ -56,7 +82,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
     
     final channel = _appState!.currentChannel;
 
-    // যদি অলরেডি এই চ্যানেলটি প্লে হতে থাকে, তবে নতুন করে লোড করার দরকার নেই
     if (_activeChannelId == channel.id && _controller != null) return;
 
     setState(() {
@@ -64,10 +89,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _activeChannelId = channel.id;
     });
 
-    // ১. পুরনো কন্ট্রোলারকে সম্পূর্ণরূপে স্টপ, ভলিউম জিরো এবং ডিসপোজ করা
     if (_controller != null) {
       final oldCtrl = _controller!;
-      _controller = null; // নতুন অবজেক্ট তৈরির আগে রেফারেন্স কাটা বাধ্যতামূলক
+      _controller = null; 
       
       if (_controllerListener != null) {
         oldCtrl.removeListener(_controllerListener!);
@@ -86,8 +110,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     }
 
-    // ২. নতুন চ্যানেলের কন্ট্রোলার তৈরি ও প্লে করা
-    final newController = VideoPlayerController.networkUrl(Uri.parse(channel.streamUrl));
+    final newController = VideoPlayerController.networkUrl(
+      Uri.parse(channel.streamUrl),
+      videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: false),
+      httpHeaders: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': '*/*',
+        'Connection': 'keep-alive',
+      },
+    );
 
     try {
       await newController.initialize();
@@ -128,11 +159,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  // চ্যানেল পরিবর্তনের মূল ফাংশন (যা বাটন ও রিমোট কী দুই জায়গাতেই কাজ করবে)
   void _safeChannelSwitch(int direction) async {
     if (_appState == null) return;
     
-    // প্রথমে বর্তমান রানিং প্লেয়ারটিকে এখানেই পজ ও মিউট করে দিন যাতে সাউন্ড লিক না হয়
+    setState(() {
+      _showControls = true;
+      _isLoading = true; 
+      _activeChannelId = null;
+    });
+    _startControlsTimer();
+
     if (_controller != null) {
       try {
         _controller!.removeListener(_controllerListener!);
@@ -141,28 +177,111 @@ class _PlayerScreenState extends State<PlayerScreen> {
         await _controller!.pause();
       } catch (_) {}
     }
-
-    setState(() {
-      _isLoading = true; 
-      _activeChannelId = null;
-    });
     
-    // প্রোভাইডারের মাধ্যমে চ্যানেল চেঞ্জ করুন
     _appState!.switchChannel(direction);
 
-    // ফ্রেম আপডেট হওয়ার সাথে সাথে সাথে নতুন চ্যানেলটি প্লে করা শুরু করুন
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _initController();
     });
   }
 
+  // ── নির্দিষ্ট নম্বরে চ্যানেল পরিবর্তন করার মূল লজিক ──
+  void _switchToSpecificChannelNumber(int targetNumber) async {
+    if (_appState == null) return;
+
+    final allChannels = _appState!.channels; 
+    
+    // ইউজার ১ চাপলে ইনডেক্স হবে ০ (0-based Indexing)
+    int targetIndex = targetNumber - 1;
+
+    if (targetIndex >= 0 && targetIndex < allChannels.length) {
+      setState(() {
+        _showControls = true;
+        _isLoading = true;
+        _activeChannelId = null;
+      });
+
+      if (_controller != null) {
+        try {
+          _controller!.removeListener(_controllerListener!);
+          _controllerListener = null;
+          await _controller!.setVolume(0.0);
+          await _controller!.pause();
+        } catch (_) {}
+      }
+
+      // AppState-এর নতুন মেথডটি এখানে কল করা হলো
+      _appState!.selectChannelByIndex(targetIndex); 
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _initController();
+      });
+    } else {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('$targetNumber নম্বরে কোনো চ্যানেল পাওয়া যায়নি।'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _handleNumberInput(String number) {
+    _numberInputTimer?.cancel(); 
+    
+    setState(() {
+      _showControls = true; 
+      _typedChannelNumber += number; 
+    });
+
+    // ১.৫ সেকেন্ড পর্যন্ত ইউজার আর কোনো বাটন না চাপলে চ্যানেল লোড হবে
+    _numberInputTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && _typedChannelNumber.isNotEmpty) {
+        final targetNum = int.tryParse(_typedChannelNumber);
+        if (targetNum != null) {
+          _switchToSpecificChannelNumber(targetNum);
+        }
+        setState(() {
+          _typedChannelNumber = ""; 
+        });
+        _startControlsTimer();
+      }
+    });
+  }
+
   void _handleKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
+
+    final keyLabel = event.logicalKey.keyLabel;
+    
+    // টিভি রিমোটের ডিজিটাল ০-৯ নম্বর ইনপুট সনাক্তকরণ
+    if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
+      _handleNumberInput(keyLabel);
+      return;
+    }
+
+    // Arrow Up/Down চাপলে সাথে সাথে সরাসরি চ্যানেল পরিবর্তন
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       _safeChannelSwitch(-1);
+      return;
     } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       _safeChannelSwitch(1);
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+      return;
+    }
+
+    if (!_showControls) {
+      setState(() {
+        _showControls = true;
+      });
+      _startControlsTimer();
+      return; 
+    }
+
+    _startControlsTimer();
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
         event.logicalKey == LogicalKeyboardKey.escape) {
       _exitPlayer();
     } else if (event.logicalKey == LogicalKeyboardKey.space ||
@@ -178,9 +297,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() {
       ctrl.value.isPlaying ? ctrl.pause() : ctrl.play();
     });
+    _startControlsTimer();
   }
 
   void _exitPlayer() async {
+    _controlsTimer?.cancel();
+    _numberInputTimer?.cancel();
     WakelockPlus.disable();
     
     if (_controller != null) {
@@ -198,6 +320,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   void dispose() {
+    _controlsTimer?.cancel();
+    _numberInputTimer?.cancel();
     WakelockPlus.disable();
     
     if (_controller != null && _controllerListener != null) {
@@ -232,7 +356,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       child: Scaffold(
         backgroundColor: Colors.black,
         body: GestureDetector(
-          onTap: () => setState(() => _showControls = !_showControls),
+          onTap: _toggleControlsVisibility,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -381,7 +505,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
 
-              // ── ৫. চ্যানেল সুইচ টোস্ট ───────────────────────────────────────
+              // ── ৫. চ্যানেল সুইচ টোস্ট (AppState থেকে ট্রিগার হয়) ──────────────────────
               Positioned(
                 left: 24, right: 24, bottom: _showControls ? 70 : 24,
                 child: AnimatedOpacity(
@@ -408,6 +532,28 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               ),
+
+              // ── ৬. টিভি স্ক্রিনে টাইপ করা নম্বর দেখার ওভারলে ──
+              if (_typedChannelNumber.isNotEmpty)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.red, width: 2.5),
+                    ),
+                    child: Text(
+                      _typedChannelNumber,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 54, 
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
