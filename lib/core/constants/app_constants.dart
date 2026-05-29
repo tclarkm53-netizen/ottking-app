@@ -7,14 +7,14 @@ class AppConstants {
   static const String appTagline = 'Secure Live TV for every screen';
 
   // API endpoints
-  static const String defaultApiBaseUrl = 'https://verify-app.alwaysdata.net/apps/api/v1';
-  static const String localAndroidApiBaseUrl = 'https://verify-app.alwaysdata.net/apps/api/v1';
-  static const String localDesktopApiBaseUrl = 'https://verify-app.alwaysdata.net/apps/api/v1';
+  static const String defaultApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
+  static const String localAndroidApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
+  static const String localDesktopApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
 
   // Security — in production, load these from environment / secure vault
-  static const String apiKeyId = 'ottking_key_v1_secret_id';
-  static const String hmacSecret = 'hmac_secret_key_for_version_1_apps';
-  static const String encryptionKey = '12345678901234567890123456789012'; // must be 32 chars
+  static const String apiKeyId = 'ottking-mobile';
+  static const String hmacSecret = 'ottking-hmac-secret-2026';
+  static const String encryptionKey = 'ottking_secure_32byte_key_2026AB'; // must be 32 chars
 
   // Player fallback
   static const String fallbackStreamUrl =
