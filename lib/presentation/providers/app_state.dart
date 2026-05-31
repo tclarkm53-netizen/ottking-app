@@ -58,7 +58,9 @@ class AppState extends ChangeNotifier {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
 
   Future<void> bootstrap() async {
-    isSmartTv = deviceModeService.isSmartTv();
+    // 🛠️ এখানে await সহ সঠিক Async মেথডটি কল করা হয়েছে
+    isSmartTv = await deviceModeService.isAndroidTvAsync();
+    
     themeMode = prefs.getString('themeMode') == 'light'
         ? ThemeMode.light
         : ThemeMode.dark;
@@ -193,18 +195,13 @@ class AppState extends ChangeNotifier {
     });
   }
 
-// ── নম্বর দিয়ে সরাসরি চ্যানেল সিলেক্ট করার মেথড (নতুন যুক্ত করুন) ─────────────────
+  // ── নম্বর দিয়ে সরাসরি চ্যানেল সিলেক্ট করার মেথড ───────────────────────────────
   void selectChannelByIndex(int index) {
     if (channels.isEmpty) return;
     
-    // ইনডেক্সটি যেন চ্যানেল লিস্টের সীমার বাইরে না যায় তার জন্য সেফটি চেক
     _currentChannelIndex = index.clamp(0, channels.length - 1);
-    
-    // আপনার তৈরি করা টোস্ট মেসেজটি দেখাবে
     _showChannelToast(channels[_currentChannelIndex].name);
   }
-
-
   
   // ── Current channel ───────────────────────────────────────────────────────
 
