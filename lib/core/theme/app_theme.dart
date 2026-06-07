@@ -1,68 +1,89 @@
 // lib/core/theme/app_theme.dart
-
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  const AppTheme._();
+  AppTheme._();
 
-  static const Color backgroundDark = Color(0xFF090B16);
-  static const Color backgroundLight = Color(0xFFF4F6FB);
-  static const Color surfaceDark = Color(0xFF11152A);
-  static const Color surfaceLight = Color(0xFFFFFFFF);
-  static const Color accent = Color(0xFF8B5CF6);
-  static const Color accentCyan = Color(0xFF22D3EE);
-  static const Color success = Color(0xFF34D399);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFF87171);
+  // ── Palette ───────────────────────────────────────────────────────────────
+  static const Color bgDeep       = Color(0xFF080600);
+  static const Color bgDark       = Color(0xFF100D00);
+  static const Color bgCard       = Color(0xFF181300);
+  static const Color bgCardLit    = Color(0xFF201900);
+  static const Color gold         = Color(0xFFD4A017);
+  static const Color goldLight    = Color(0xFFFFD966);
+  static const Color goldDim      = Color(0xFF9B7213);
+  static const Color amber        = Color(0xFFFFC107);
+  static const Color red          = Color(0xFFE53935);
+  static const Color green        = Color(0xFF43A047);
+  static const Color textPrimary  = Color(0xFFFFF8E1);
+  static const Color textSub      = Color(0xFFBFAA72);
+  static const Color textMuted    = Color(0xFF7A6930);
+  static const Color border       = Color(0xFF2A2000);
+  static const Color borderGold   = Color(0xFF4D3C00);
 
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    scaffoldBackgroundColor: backgroundDark,
-    colorScheme: const ColorScheme.dark(
-      primary: accent,
-      secondary: accentCyan,
-      surface: surfaceDark,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: Colors.white10,
-    ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      foregroundColor: Colors.white,
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: surfaceDark,
-      labelStyle: const TextStyle(color: Colors.white70),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
+  // ── Gradients ─────────────────────────────────────────────────────────────
+  static const LinearGradient goldGrad = LinearGradient(
+    colors: [goldDim, goldLight, gold],
+  );
+  static const LinearGradient bgGrad = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [bgDark, bgDeep],
   );
 
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    scaffoldBackgroundColor: backgroundLight,
-    colorScheme: const ColorScheme.light(
-      primary: accent,
-      secondary: Color(0xFF0F172A),
-      surface: surfaceLight,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: Colors.black.withAlpha(13),
-    ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      foregroundColor: Color(0xFF0F172A),
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  );
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  static ThemeData get dark => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: bgDeep,
+        colorScheme: const ColorScheme.dark(
+          primary: gold,
+          secondary: amber,
+          surface: bgCard,
+          error: red,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: bgDark,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          foregroundColor: textPrimary,
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: bgCard,
+          selectedColor: Color(0x33D4A017),
+          labelStyle: const TextStyle(color: textPrimary, fontSize: 13),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          side: const BorderSide(color: borderGold),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: bgCard,
+          labelStyle: const TextStyle(color: textMuted),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: borderGold)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: gold, width: 2)),
+        ),
+        switchTheme: SwitchThemeData(
+          thumbColor: WidgetStateProperty.resolveWith(
+              (s) => s.contains(WidgetState.selected) ? gold : textMuted),
+          trackColor: WidgetStateProperty.resolveWith(
+              (s) => s.contains(WidgetState.selected)
+                  ? const Color(0x66D4A017)
+                  : border),
+        ),
+        textTheme: const TextTheme(
+          displayLarge:   TextStyle(color: textPrimary, fontWeight: FontWeight.w900),
+          headlineLarge:  TextStyle(color: textPrimary, fontWeight: FontWeight.w800),
+          headlineMedium: TextStyle(color: textPrimary, fontWeight: FontWeight.w700),
+          bodyLarge:      TextStyle(color: textPrimary),
+          bodyMedium:     TextStyle(color: textSub),
+          labelLarge:     TextStyle(color: textPrimary, fontWeight: FontWeight.w600),
+        ),
+      );
 }
