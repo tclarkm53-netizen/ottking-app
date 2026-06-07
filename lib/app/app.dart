@@ -1,8 +1,6 @@
 // lib/app/app.dart
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import '../core/theme/app_theme.dart';
 import '../presentation/providers/app_state.dart';
 import '../presentation/screens/home_screen.dart';
@@ -15,19 +13,20 @@ class OttKingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = context.select<AppState, ThemeMode>((s) => s.themeMode);
+    // Listen only to themeMode to avoid full rebuilds
+    context.select<AppState, ThemeMode>((s) => ThemeMode.dark);
 
     return MaterialApp(
       title: 'OTTKing',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: themeMode,
+      theme:     AppTheme.dark,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
       initialRoute: '/splash',
       routes: {
-        '/splash': (_) => const SplashScreen(),
-        '/home': (_) => const HomeScreen(),
-        '/player': (_) => const PlayerScreen(),
+        '/splash':   (_) => const SplashScreen(),
+        '/home':     (_) => const HomeScreen(),
+        '/player':   (_) => const PlayerScreen(),
         '/settings': (_) => const SettingsScreen(),
       },
     );
