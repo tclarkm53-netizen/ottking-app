@@ -3,8 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../../core/constants/app_constants.dart';
 import '../providers/app_state.dart';
-import '../../data/models/channel_model.dart';
+import '../widgets/focus_glow_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,347 +16,345 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final FocusScopeNode _mainFocusScopeNode = FocusScopeNode();
-  int _selectedCategoryIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // স্ক্রিন লোড হওয়ার সাথে সাথে ডিভাইস মোড আপডেট করা
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<AppState>().updateDeviceMode(context);
-      }
-    });
-  }
+  final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
+  final PageController _pageController = PageController(viewportFraction: 1.0);
+  
+  // ── নতুন যুক্ত করা স্টেট ──
+  int _selectedCategoryIndex = 0; // সিলেক্টেড ক্যাটাগরি ট্র্যাক করার জন্য
+  int _currentBottomNavIndex = 0; // মোবাইলের বটম নেভিগেশনের জন্য
 
   @override
   void dispose() {
-    _mainFocusScopeNode.dispose();
+    _rootFocusNode.dispose();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  void _handleKeyEvent(KeyEvent event, AppState appState) {
+    if (event is! KeyDownEvent) return;
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      FocusScope.of(context).nextFocus();
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      FocusScope.of(context).previousFocus();
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      appState.switchChannel(1);
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      appState.switchChannel(-1);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
-    // যদি ডেটা লোড হতে থাকে
-    if (appState.isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0F0F0F),
-        body: Center(
-          child: CircularProgressIndicator(color: Colors.red),
-        ),
-      );
-    }
+    // স্ক্রিনের উইডথ ৮০০ এর বেশি এবং ল্যান্ডস্কেপ হলে টিভি মোড সচল হবে
+    final isTV = MediaQuery.of(context).size.width > 800 && 
+                 MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // যদি কোনো এপিআই এরর থাকে
-    if (appState.errorMessage.isNotEmpty) {
-      return Scaffold(
-        backgroundColor: const Color(0xFF0F0F0F),
-        body: Center(
-          child: Text(
-            'Error: ${appState.errorMessage}',
-            style: const TextStyle(color: Colors.white, fontSize: 18),
-          ),
-        ),
-      );
-    }
+    // ── 🎯 ক্যাটাগরি ফিল্টারিং লজিক ──
+    final String currentCategoryName = appState.categories.isNotEmpty
+        ? appState.categories[_selectedCategoryIndex].name
+        : '';
 
-    // টিভির স্ক্রিনের জন্য ল্যান্ডস্কেপ লেআউট এবং মোবাইলের জন্য পোর্ট্রেট রেসপন্সিভনেস
-    final bool isTvLayout = appState.isSmartTv;
+    // সিলেক্টেড ক্যাটাগরির নামের সাথে ম্যাচ করে চ্যানেল ফিল্টার করা হচ্ছে
+    final filteredChannels = appState.channels.where((channel) {
+      if (currentCategoryName.isEmpty) return true;
+      return channel.category.toLowerCase() == currentCategoryName.toLowerCase();
+    }).toList();
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
-      appBar: AppBar(
-        title: Text(
-          appState.isSmartTv ? 'oTtking TV' : 'oTtking Mobile',
-          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        backgroundColor: const Color(0xFF1F1F1F),
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: Icon(
-              appState.themeMode == ThemeMode.dark ? Icons.dark_mode : Icons.light_mode,
+    return KeyboardListener(
+      focusNode: _rootFocusNode,
+      autofocus: true,
+      onKeyEvent: (event) => _handleKeyEvent(event, appState),
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A), 
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF0F172A),
+          elevation: 0,
+          centerTitle: false,
+          title: Text(
+            AppConstants.appName,
+            style: const TextStyle(
               color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              letterSpacing: 0.8,
             ),
-            onPressed: () => appState.toggleTheme(),
           ),
-        ],
-      ),
-      body: FocusScope(
-        node: _mainFocusScopeNode,
-        autofocus: true, // টিভি রিমোটের জন্য প্রথম ফোকাস এখান থেকে শুরু হবে
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── ১. বাম পাশের ক্যাটাগরি লিস্ট (টিভি লেআউটে বড় দেখাবে) ──
-            Container(
-              width: isTvLayout ? 240 : 120,
-              color: const Color(0xFF141414),
-              child: ListView.builder(
-                itemCount: appState.categories.length,
-                itemBuilder: (context, index) {
-                  final category = appState.categories[index];
-                  return _TvCategoryItem(
-                    title: category.name,
-                    isSelected: _selectedCategoryIndex == index,
-                    isTv: isTvLayout,
-                    onTap: () {
-                      setState(() {
-                        _selectedCategoryIndex = index;
-                      });
-                    },
-                  );
-                },
-              ),
-            ),
-
-            // ── ২. ডান পাশের চ্যানেল গ্রিড ভিউ ──
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      appState.categories.isNotEmpty
-                          ? appState.categories[_selectedCategoryIndex].name
-                          : 'Live Channels',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: isTvLayout ? 24 : 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Expanded(
-                      child: GridView.builder(
-                        itemCount: appState.channels.length,
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: isTvLayout ? 5 : 3, // টিভিতে ৫টি, মোবাইলে ৩টি কলাম
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 16 / 11, // ওটিটি কার্ডের পারফেক্ট রেশিও
-                        ),
-                        itemBuilder: (context, index) {
-                          final channel = appState.channels[index];
-                          return _TvChannelGridCard(
-                            channel: channel,
-                            isTv: isTvLayout,
-                            onTap: () {
-                              // চ্যানেল ইন্ডেক্স সিলেক্ট করা
-                              appState.currentChannelIndex = index;
-                              
-                              // TODO: আপনার ভিডিও প্লেয়ার স্ক্রিনে নেভিগেট করুন
-                              // Navigator.pushNamed(context, '/player');
-                              
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Playing: ${channel.name}'),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: IconButton(
+                icon: const Icon(Icons.settings_suggest_rounded, color: Colors.white, size: 26),
+                onPressed: () => Navigator.pushNamed(context, '/settings'),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── কাস্টম ক্যাটাগরি আইটেম উইজেট (রিমোট ফোকাস সাপোর্ট সহ) ──
-class _TvCategoryItem extends StatefulWidget {
-  final String title;
-  final bool isSelected;
-  final bool isTv;
-  final VoidCallback onTap;
-
-  const _TvCategoryItem({
-    required this.title,
-    required this.isSelected,
-    required this.isTv,
-    required this.onTap,
-  });
-
-  @override
-  State<_TvCategoryItem> createState() => _TvCategoryItemState();
-}
-
-class _TvCategoryItemState extends State<_TvCategoryItem> {
-  bool _isFocused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      onFocusChange: (focused) {
-        setState(() {
-          _isFocused = focused;
-        });
-      },
-      onKeyEvent: (node, event) {
-        if (event is RawKeyDownEvent && event.logicalKey == LogicalKeyboardKey.select) {
-          widget.onTap();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          padding: EdgeInsets.symmetric(
-            vertical: widget.isTv ? 16 : 12,
-            horizontal: 16,
-          ),
-          decoration: BoxDecoration(
-            // রিমোট ফোকাস হলে লাল ব্যাকগ্রাউন্ড, সিলেক্টেড থাকলে গাঢ় ধূসর
-            color: _isFocused
-                ? Colors.red.withOpacity(0.9)
-                : (widget.isSelected ? const Color(0xFF2E2E2E) : Colors.transparent),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: _isFocused ? Colors.white : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: Text(
-            widget.title,
-            style: TextStyle(
-              color: (_isFocused || widget.isSelected) ? Colors.white : Colors.grey,
-              fontSize: widget.isTv ? 16 : 13,
-              fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── কাস্টম চ্যানেল কার্ড উইজেট (রিমোট ফোকাস এবং হাইলাইট এফেক্ট সহ) ──
-class _TvChannelGridCard extends StatefulWidget {
-  final ChannelModel channel;
-  final bool isTv;
-  final VoidCallback onTap;
-
-  const _TvChannelGridCard({
-    required this.channel,
-    required this.isTv,
-    required this.onTap,
-  });
-
-  @override
-  State<_TvChannelGridCard> createState() => _TvChannelGridCardState();
-}
-
-class _TvChannelGridCardState extends State<_TvChannelGridCard> {
-  bool _isFocused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      onFocusChange: (focused) {
-        setState(() {
-          _isFocused = focused;
-        });
-      },
-      onKeyEvent: (node, event) {
-        // রিমোটের D-Pad বা 'OK' বাটন প্রেস হ্যান্ডেলিং
-        if (event is RawKeyDownEvent &&
-            (event.logicalKey == LogicalKeyboardKey.select ||
-             event.logicalKey == LogicalKeyboardKey.enter)) {
-          widget.onTap();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          // রিমোট ফোকাস হলে কার্ডটি সামান্য বড় (Scale up) দেখাবে যা টিভিতে দেখতে দারুণ লাগে
-          transform: _isFocused
-              ? (Matrix4.identity()..scale(1.05))
-              : Matrix4.identity(),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: _isFocused ? Colors.red : const Color(0xFF333333),
-              width: _isFocused ? 2.5 : 1.0,
-            ),
-            boxShadow: _isFocused
-                ? [
-                    BoxShadow(
-                      color: Colors.red.withOpacity(0.5),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    )
-                  ]
-                : [],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // লোগো বা থাম্বনেইল এরিয়া
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(6),
-                    topRight: Radius.circular(6),
-                  ),
-                  child: Container(
-                    color: const Color(0xFF2A2A2A),
-                    child: widget.channel.logoUrl.isNotEmpty
-                        ? Image.network(
-                            widget.channel.logoUrl,
-                            fit: BoxFit.scaleDown,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.tv,
-                              color: Colors.grey,
-                              size: 32,
+        body: appState.isLoading
+            ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4))))
+            : ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.only(bottom: 24), 
+                children: [
+                  
+                  // ── ১. প্রিমিয়াম ১০০% ফুল উইডথ ব্যানার সেকশন ──
+                  if (appState.banners.isNotEmpty) ...[
+                    SizedBox(
+                      height: isTV ? 280 : 180,
+                      width: double.infinity,
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: appState.banners.length,
+                        itemBuilder: (context, index) {
+                          final banner = appState.banners[index];
+                          return Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              image: banner.imageUrl != null 
+                                ? DecorationImage(
+                                    image: NetworkImage(banner.imageUrl!), 
+                                    fit: BoxFit.cover,
+                                  )
+                                : null,
                             ),
-                          )
-                        : const Icon(
-                            Icons.live_tv,
-                            color: Colors.redAccent,
-                            size: 32,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Colors.black.withOpacity(0.1),
+                                    const Color(0xFF0F172A).withOpacity(0.95),
+                                  ],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                ),
+                              ),
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isTV ? 40 : 16, 
+                                vertical: 20
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(color: const Color(0xFF06B6D4), borderRadius: BorderRadius.circular(6)),
+                                    child: const Text('FEATURED', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    banner.title,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: isTV ? 28 : 20,
+                                      shadows: const [Shadow(color: Colors.black, blurRadius: 6, offset: Offset(0, 2))],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    banner.subtitle,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.9), 
+                                      fontSize: isTV ? 15 : 13,
+                                      shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(0, 1))],
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // ── অন্যান্য সেকশনের জন্য নিরাপদ হরাইজনটাল প্যাডিং ──
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: isTV ? 40 : 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        
+                        // ── ২. ফিচার্ড ক্যাটাগরি সেকশন (ক্লিক ফিল্টারিং সক্রিয় করা হয়েছে) ──
+                        if (appState.categories.isNotEmpty) ...[
+                          const _SectionHeader(title: '🔥 Featured Categories'),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            height: 46,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: appState.categories.length,
+                              itemBuilder: (context, index) {
+                                final category = appState.categories[index];
+                                final isSelected = _selectedCategoryIndex == index;
+                                
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: ActionChip(
+                                    // ক্লিক করলে সিলেক্টেড ক্যাটাগরি স্টেট চেইঞ্জ হবে এবং কন্টেন্ট ফিল্টার হবে
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedCategoryIndex = index;
+                                      });
+                                    },
+                                    // সিলেক্টেড থাকলে ব্যাকগ্রাউন্ড কালার সায়ান (Cyan) বা হাইলাইটেড হবে
+                                    backgroundColor: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF1E293B),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: isSelected ? Colors.white : Colors.white.withOpacity(0.04),
+                                        width: isSelected ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    avatar: Text(category.icon, style: const TextStyle(fontSize: 16)),
+                                    label: Text(
+                                      category.name, 
+                                      style: TextStyle(
+                                        color: isSelected ? Colors.black : Colors.white, 
+                                        fontWeight: FontWeight.w600, 
+                                        fontSize: 13
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
+                          const SizedBox(height: 28),
+                        ],
+
+                        // ── ৩. লাইভ টিভি চ্যানেল গ্রিড সেকশন (ফিল্টারড ডাটা অনুযায়ী রেসপন্সিভ ভিউ) ──
+                        _SectionHeader(title: '📺 $currentCategoryName Channels'),
+                        const SizedBox(height: 14),
+                        
+                        filteredChannels.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(24.0),
+                                child: Center(child: Text('No channels available in this category.', style: TextStyle(color: Colors.grey))),
+                              )
+                            : GridView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: isTV ? 5 : 3, // টিভিতে ৫ কলাম, মোবাইলে ৩ কলাম
+                                  mainAxisSpacing: isTV ? 16 : 12,
+                                  crossAxisSpacing: isTV ? 16 : 12,
+                                  childAspectRatio: isTV ? 1.2 : 0.95, 
+                                ),
+                                itemCount: filteredChannels.length,
+                                itemBuilder: (context, index) {
+                                  final channel = filteredChannels[index];
+                                  
+                                  // অরিজিনাল লিস্ট থেকে এই ফিল্টারড চ্যানেলের গ্লোবাল ইনডেক্স খুঁজে বের করা হচ্ছে
+                                  final originalIndex = appState.channels.indexOf(channel);
+                                  final selected = appState.currentChannelIndex == originalIndex;
+
+                                  return FocusGlowButton(
+                                    isTV: isTV,
+                                    label: channel.name, 
+                                    icon: Icons.live_tv_rounded,
+                                    selected: selected,
+                                    onTap: () {
+                                      appState.currentChannelIndex = originalIndex;
+                                      Navigator.pushNamed(context, '/player');
+                                    },
+                                    trailing: Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1E293B),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          if (channel.logoUrl.isNotEmpty)
+                                            Image.network(
+                                              channel.logoUrl,
+                                              fit: BoxFit.contain, // লোগো সুন্দর দেখানোর জন্য কন্টেইন ব্যবহার করা বেটার
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24));
+                                              },
+                                            )
+                                          else
+                                            const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24)),
+                                          
+                                          // কোয়ালিটি ট্যাগ
+                                          Positioned(
+                                            top: 4, right: 4,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black87,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                channel.quality.toUpperCase(),
+                                                style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 7, fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
-              // চ্যানেলের নাম
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-                color: _isFocused ? Colors.red : const Color(0xFF121212),
-                child: Text(
-                  widget.channel.name,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: widget.isTv ? 14 : 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+        
+        // ── ৪. মোবাইলের জন্য বটম নেভিগেশন বার (টিভিতে এটি লুকানো থাকবে) ──
+        bottomNavigationBar: isTV 
+            ? null 
+            : BottomNavigationBar(
+                currentIndex: _currentBottomNavIndex,
+                backgroundColor: const Color(0xFF0F172A),
+                selectedItemColor: const Color(0xFF06B6D4), // থিম কালার মিলানো হয়েছে
+                unselectedItemColor: Colors.slate.shade500,
+                type: BottomNavigationBarType.fixed,
+                onTap: (index) {
+                  setState(() {
+                    _currentBottomNavIndex = index;
+                  });
+                  if (index == 3) {
+                    Navigator.pushNamed(context, '/settings');
+                  }
+                },
+                items: const [
+                  BottomNavigationBarItem(icon: Icon(Icons.live_tv_rounded), label: 'Live TV'),
+                  BottomNavigationBarItem(icon: Icon(Icons.movie_creation_rounded), label: 'Movies'),
+                  BottomNavigationBarItem(icon: Icon(Icons.video_library_rounded), label: 'Series'),
+                  BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: 'Settings'),
+                ],
               ),
-            ],
-          ),
-        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        color: Colors.white,
+        letterSpacing: 0.5,
       ),
     );
   }
