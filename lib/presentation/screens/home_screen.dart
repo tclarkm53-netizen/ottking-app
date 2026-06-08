@@ -19,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
   final PageController _pageController = PageController(viewportFraction: 1.0);
   
+  // ── ০ ইনডেক্স মানে ডিফল্টভাবে "All" সিলেক্টেড থাকবে ──
   int _selectedCategoryIndex = 0; 
   int _currentBottomNavIndex = 0; 
 
@@ -50,12 +51,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
-    final String currentCategoryName = appState.categories.isNotEmpty
-        ? appState.categories[_selectedCategoryIndex].name
-        : '';
+    // ── 🎯 অল চ্যানেল এবং ক্যাটাগরি ফিল্টারিং লজিক ──
+    // ডিফল্টভাবে ক্যাটাগরি লিস্টের শুরুতে "All" অপশন যোগ করা হচ্ছে
+    final List<dynamic> extendedCategories = [];
+    if (appState.categories.isNotEmpty) {
+      extendedCategories.add({'name': 'All', 'icon': '🌐'}); // কাস্টম অল অপশন
+      extendedCategories.addAll(appState.categories.map((c) => {'name': c.name, 'icon': c.icon}));
+    }
 
+    // কারেন্ট সিলেক্টেড ক্যাটাগরির নাম বের করা
+    final String currentCategoryName = extendedCategories.isNotEmpty
+        ? extendedCategories[_selectedCategoryIndex]['name']
+        : 'All';
+
+    // যদি "All" সিলেক্ট থাকে তবে সব চ্যানেল আসবে, অন্যথায় ক্যাটাগরি অনুযায়ী ফিল্টার হবে
     final filteredChannels = appState.channels.where((channel) {
-      if (currentCategoryName.isEmpty) return true;
+      if (currentCategoryName == 'All' || currentCategoryName.isEmpty) return true;
       return channel.category.toLowerCase() == currentCategoryName.toLowerCase();
     }).toList();
 
@@ -175,7 +186,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         
-                        if (appState.categories.isNotEmpty) ...[
+                        // ── ২. ক্যাটাগরি সেকশন ("All" অপশন সহ) ──
+                        if (extendedCategories.isNotEmpty) ...[
                           const _SectionHeader(title: '🔥 Featured Categories'),
                           const SizedBox(height: 12),
                           SizedBox(
@@ -183,9 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: ListView.builder(
                               scrollDirection: Axis.horizontal,
                               physics: const BouncingScrollPhysics(),
-                              itemCount: appState.categories.length,
+                              itemCount: extendedCategories.length,
                               itemBuilder: (context, index) {
-                                final category = appState.categories[index];
+                                final category = extendedCategories[index];
                                 final isSelected = _selectedCategoryIndex == index;
                                 
                                 return Padding(
@@ -204,9 +216,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                         width: isSelected ? 1.5 : 1.0,
                                       ),
                                     ),
-                                    avatar: Text(category.icon, style: const TextStyle(fontSize: 16)),
+                                    avatar: Text(category['icon'], style: const TextStyle(fontSize: 16)),
                                     label: Text(
-                                      category.name, 
+                                      category['name'], 
                                       style: TextStyle(
                                         color: isSelected ? Colors.black : Colors.white, 
                                         fontWeight: FontWeight.w600, 
@@ -221,6 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 28),
                         ],
 
+                        // ── ৩. লাইভ টিভি চ্যানেল গ্রিড সেকশন ──
                         _SectionHeader(title: '📺 $currentCategoryName Channels'),
                         const SizedBox(height: 14),
                         
@@ -305,7 +318,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 currentIndex: _currentBottomNavIndex,
                 backgroundColor: const Color(0xFF0F172A),
                 selectedItemColor: const Color(0xFF06B6D4), 
-                // ── 🔴 ফিক্স: Colors.slate.shade500 পরিবর্তন করে ফ্লাটারের ভ্যালিড কালার দেওয়া হলো ──
                 unselectedItemColor: Colors.grey.shade500,
                 type: BottomNavigationBarType.fixed,
                 onTap: (index) {
