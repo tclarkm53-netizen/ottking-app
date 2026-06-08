@@ -19,9 +19,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
   final PageController _pageController = PageController(viewportFraction: 1.0);
   
-  // ── নতুন যুক্ত করা স্টেট ──
-  int _selectedCategoryIndex = 0; // সিলেক্টেড ক্যাটাগরি ট্র্যাক করার জন্য
-  int _currentBottomNavIndex = 0; // মোবাইলের বটম নেভিগেশনের জন্য
+  int _selectedCategoryIndex = 0; 
+  int _currentBottomNavIndex = 0; 
 
   @override
   void dispose() {
@@ -48,16 +47,13 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
-    // স্ক্রিনের উইডথ ৮০০ এর বেশি এবং ল্যান্ডস্কেপ হলে টিভি মোড সচল হবে
     final isTV = MediaQuery.of(context).size.width > 800 && 
                  MediaQuery.of(context).orientation == Orientation.landscape;
 
-    // ── 🎯 ক্যাটাগরি ফিল্টারিং লজিক ──
     final String currentCategoryName = appState.categories.isNotEmpty
         ? appState.categories[_selectedCategoryIndex].name
         : '';
 
-    // সিলেক্টেড ক্যাটাগরির নামের সাথে ম্যাচ করে চ্যানেল ফিল্টার করা হচ্ছে
     final filteredChannels = appState.channels.where((channel) {
       if (currentCategoryName.isEmpty) return true;
       return channel.category.toLowerCase() == currentCategoryName.toLowerCase();
@@ -99,7 +95,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.only(bottom: 24), 
                 children: [
                   
-                  // ── ১. প্রিমিয়াম ১০০% ফুল উইডথ ব্যানার সেকশন ──
                   if (appState.banners.isNotEmpty) ...[
                     SizedBox(
                       height: isTV ? 280 : 180,
@@ -174,14 +169,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 20),
                   ],
 
-                  // ── অন্যান্য সেকশনের জন্য নিরাপদ হরাইজনটাল প্যাডিং ──
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: isTV ? 40 : 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         
-                        // ── ২. ফিচার্ড ক্যাটাগরি সেকশন (ক্লিক ফিল্টারিং সক্রিয় করা হয়েছে) ──
                         if (appState.categories.isNotEmpty) ...[
                           const _SectionHeader(title: '🔥 Featured Categories'),
                           const SizedBox(height: 12),
@@ -198,13 +191,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 return Padding(
                                   padding: const EdgeInsets.only(right: 10),
                                   child: ActionChip(
-                                    // ক্লিক করলে সিলেক্টেড ক্যাটাগরি স্টেট চেইঞ্জ হবে এবং কন্টেন্ট ফিল্টার হবে
                                     onPressed: () {
                                       setState(() {
                                         _selectedCategoryIndex = index;
                                       });
                                     },
-                                    // সিলেক্টেড থাকলে ব্যাকগ্রাউন্ড কালার সায়ান (Cyan) বা হাইলাইটেড হবে
                                     backgroundColor: isSelected ? const Color(0xFF06B6D4) : const Color(0xFF1E293B),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
@@ -230,7 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 28),
                         ],
 
-                        // ── ৩. লাইভ টিভি চ্যানেল গ্রিড সেকশন (ফিল্টারড ডাটা অনুযায়ী রেসপন্সিভ ভিউ) ──
                         _SectionHeader(title: '📺 $currentCategoryName Channels'),
                         const SizedBox(height: 14),
                         
@@ -243,7 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 shrinkWrap: true,
                                 physics: const NeverScrollableScrollPhysics(),
                                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: isTV ? 5 : 3, // টিভিতে ৫ কলাম, মোবাইলে ৩ কলাম
+                                  crossAxisCount: isTV ? 5 : 3, 
                                   mainAxisSpacing: isTV ? 16 : 12,
                                   crossAxisSpacing: isTV ? 16 : 12,
                                   childAspectRatio: isTV ? 1.2 : 0.95, 
@@ -251,8 +241,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                 itemCount: filteredChannels.length,
                                 itemBuilder: (context, index) {
                                   final channel = filteredChannels[index];
-                                  
-                                  // অরিজিনাল লিস্ট থেকে এই ফিল্টারড চ্যানেলের গ্লোবাল ইনডেক্স খুঁজে বের করা হচ্ছে
                                   final originalIndex = appState.channels.indexOf(channel);
                                   final selected = appState.currentChannelIndex == originalIndex;
 
@@ -277,7 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           if (channel.logoUrl.isNotEmpty)
                                             Image.network(
                                               channel.logoUrl,
-                                              fit: BoxFit.contain, // লোগো সুন্দর দেখানোর জন্য কন্টেইন ব্যবহার করা বেটার
+                                              fit: BoxFit.contain, 
                                               errorBuilder: (context, error, stackTrace) {
                                                 return const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24));
                                               },
@@ -285,7 +273,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                           else
                                             const Center(child: Icon(Icons.live_tv_rounded, color: Colors.white30, size: 24)),
                                           
-                                          // কোয়ালিটি ট্যাগ
                                           Positioned(
                                             top: 4, right: 4,
                                             child: Container(
@@ -312,14 +299,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
         
-        // ── ৪. মোবাইলের জন্য বটম নেভিগেশন বার (টিভিতে এটি লুকানো থাকবে) ──
         bottomNavigationBar: isTV 
             ? null 
             : BottomNavigationBar(
                 currentIndex: _currentBottomNavIndex,
                 backgroundColor: const Color(0xFF0F172A),
-                selectedItemColor: const Color(0xFF06B6D4), // থিম কালার মিলানো হয়েছে
-                unselectedItemColor: Colors.slate.shade500,
+                selectedItemColor: const Color(0xFF06B6D4), 
+                // ── 🔴 ফিক্স: Colors.slate.shade500 পরিবর্তন করে ফ্লাটারের ভ্যালিড কালার দেওয়া হলো ──
+                unselectedItemColor: Colors.grey.shade500,
                 type: BottomNavigationBarType.fixed,
                 onTap: (index) {
                   setState(() {
