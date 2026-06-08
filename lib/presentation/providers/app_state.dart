@@ -58,18 +58,31 @@ class AppState extends ChangeNotifier {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
 
   Future<void> bootstrap() async {
-    isSmartTv = deviceModeService.isSmartTv();
+    // থিম এবং বুট সেটিংস লোড
     themeMode = prefs.getString('themeMode') == 'light'
         ? ThemeMode.light
         : ThemeMode.dark;
     bootToPlayer = prefs.getBool('bootToPlayer') ?? false;
 
+    // ইউজার সেশন চেক
     isAuthenticated = await secureStorage.hasUserSession();
     userProfile = await secureStorage.readUserProfile();
 
+    // ক্যাটালগ ডাটা লোড
     await loadCatalog();
     isLoading = false;
     notifyListeners();
+  }
+
+  // ── Smart TV Mode Setup (BuildContext এর সমস্যা সমাধানের জন্য নতুন মেথড) ──
+  /// এই মেথডটি অ্যাপের প্রথম স্ক্রিনের (যেমন Splash বা Home) build মেথড অথবা 
+  /// initState এর ভেতর WidgetsBinding.instance.addPostFrameCallback এ context সহ কল করবেন।
+  Future<void> updateDeviceMode(BuildContext context) async {
+    final bool detectedTv = await deviceModeService.isSmartTv(context);
+    if (isSmartTv != detectedTv) {
+      isSmartTv = detectedTv;
+      notifyListeners();
+    }
   }
 
   // ── Catalog ───────────────────────────────────────────────────────────────
@@ -193,18 +206,13 @@ class AppState extends ChangeNotifier {
     });
   }
 
-// ── নম্বর দিয়ে সরাসরি চ্যানেল সিলেক্ট করার মেথড (নতুন যুক্ত করুন) ─────────────────
+  // ── নম্বর দিয়ে সরাসরি চ্যানেল সিলেক্ট করার মেথড ─────────────────────────
   void selectChannelByIndex(int index) {
     if (channels.isEmpty) return;
     
-    // ইনডেক্সটি যেন চ্যানেল লিস্টের সীমার বাইরে না যায় তার জন্য সেফটি চেক
     _currentChannelIndex = index.clamp(0, channels.length - 1);
-    
-    // আপনার তৈরি করা টোস্ট মেসেজটি দেখাবে
     _showChannelToast(channels[_currentChannelIndex].name);
   }
-
-
   
   // ── Current channel ───────────────────────────────────────────────────────
 
