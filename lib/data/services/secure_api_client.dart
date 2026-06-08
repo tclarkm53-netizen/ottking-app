@@ -1,65 +1,84 @@
 // lib/data/services/secure_api_client.dart
+
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:http/http.dart' as http;
+
 import '../../core/constants/app_constants.dart';
 import 'encryption_service.dart';
 import 'secure_storage_service.dart';
 
 class SecureApiClient {
   SecureApiClient({
-    required this.enc,
-    required this.store,
+    required this.encryptionService,
+    required this.secureStorage,
     String? baseUrl,
-  }) : _base = _trim(baseUrl ?? AppConstants.apiBaseUrl);
+  }) : _baseUrl = _normalise(baseUrl ?? AppConstants.defaultApiBaseUrl);
 
-  final EncryptionService    enc;
-  final SecureStorageService store;
-  final String               _base;
+  final EncryptionService encryptionService;
+  final SecureStorageService secureStorage;
+  final String _baseUrl;
 
-  static String _trim(String u) => u.endsWith('/') ? u.substring(0, u.length - 1) : u;
+  static String _normalise(String url) =>
+      url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 
-  Future<Map<String, dynamic>> post(String endpoint, Map<String, dynamic> body) async {
-    final ts     = DateTime.now().toUtc().toIso8601String();
-    final raw    = jsonEncode(body);
-    final enc_   = enc.encrypt(raw);
-    final sig    = enc.sign('$ts|$endpoint|$enc_');
-    final uri    = Uri.parse('$_base/$endpoint');
-    final token  = await store.readToken();
+  /// POSTs an AES-GCM–encrypted, HMAC-signed request to [endpoint].
+  Future<Map<String, dynamic>> post(
+    String endpoint,
+    Map<String, dynamic> payload,
+  ) async {
+    final timestamp = DateTime.now().toUtc().toIso8601String();
+    final body = jsonEncode(payload);
+    final encryptedBody = encryptionService.encrypt(body);
+    final signaturePayload = '$timestamp|$endpoint|$encryptedBody';
+    final signature = encryptionService.sign(signaturePayload);
+
+    final uri = Uri.parse('$_baseUrl/$endpoint');
 
     final headers = <String, String>{
       'Content-Type': 'application/json',
-      'x-api-key':   AppConstants.apiKeyId,
-      'x-timestamp': ts,
-      'x-signature': sig,
-      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      'x-api-key': AppConstants.apiKeyId,
+      'x-timestamp': timestamp,
+      'x-signature': signature,
     };
 
-    http.Response res;
+    final authToken = await secureStorage.readAuthToken();
+    if (authToken != null && authToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $authToken';
+    }
+
+    final http.Response response;
     try {
-      res = await http.post(
+      response = await http.post(
         uri,
         headers: headers,
-        body: jsonEncode({'encrypted_payload': enc_}),
+        body: jsonEncode({'encrypted_payload': encryptedBody}),
       );
     } on SocketException catch (e) {
-      throw Exception('Network error: ${e.message}');
+      throw Exception('Network error connecting to ${uri.host}: ${e.message}');
     }
 
-    if (res.statusCode != 200) {
-      String detail = res.body;
+    if (response.statusCode != 200) {
+      String detail = response.body;
       try {
-        final p = jsonDecode(res.body) as Map<String, dynamic>;
-        if (p['error'] is String) detail = p['error'] as String;
+        final parsed = jsonDecode(response.body);
+        if (parsed is Map<String, dynamic> && parsed['error'] is String) {
+          detail = parsed['error'] as String;
+        }
       } catch (_) {}
-      throw Exception('HTTP ${res.statusCode}: $detail');
+      throw Exception('API error ${response.statusCode}: $detail');
     }
 
-    final resp    = jsonDecode(res.body) as Map<String, dynamic>;
-    final encResp = resp['encrypted_payload'] as String;
-    final sigResp = resp['signature']         as String;
-    final decrypted = enc.decrypt(encResp);
-    if (!enc.verify(decrypted, sigResp)) throw Exception('Signature mismatch');
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final encryptedResponse = decoded['encrypted_payload'] as String;
+    final signedResponse = decoded['signature'] as String;
+    final decrypted = encryptionService.decrypt(encryptedResponse);
+
+    if (!encryptionService.verify(decrypted, signedResponse)) {
+      throw Exception('Response signature verification failed');
+    }
+
     return jsonDecode(decrypted) as Map<String, dynamic>;
   }
 }

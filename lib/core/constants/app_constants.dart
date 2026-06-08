@@ -1,29 +1,27 @@
 // lib/core/constants/app_constants.dart
 
 class AppConstants {
-  AppConstants._();
+  const AppConstants._();
 
-  static const String appName    = 'OTTKing';
-  static const String appTagline = 'Premium Live TV — Every Screen';
+  static const String appName = 'OTTKing';
+  static const String appTagline = 'Secure Live TV for every screen';
 
-  // API
-  static const String apiBaseUrl    = 'https://verify-app.alwaysdata.net/api';
-  static const String apiKeyId      = 'ottking-mobile';
-  static const String hmacSecret    = 'ottking-hmac-secret-2026';
-  static const String encryptionKey = 'ottking_secure_32byte_key_2026AB';
+  // API endpoints
+  static const String defaultApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
+  static const String localAndroidApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
+  static const String localDesktopApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
 
-  // Layout
-  static const double tvBreakpoint = 800.0;
+  // Security — in production, load these from environment / secure vault
+  static const String apiKeyId = 'ottking-mobile';
+  static const String hmacSecret = 'ottking-hmac-secret-2026';
+  static const String encryptionKey = 'ottking_secure_32byte_key_2026AB'; // must be 32 chars
 
-  // Durations
-  static const Duration splashDuration   = Duration(seconds: 3);
-  static const Duration toastDuration    = Duration(seconds: 3);
-  static const Duration numInputDelay    = Duration(milliseconds: 1500);
-  static const Duration controlsTimeout  = Duration(seconds: 4);
-  static const Duration playerTimeout    = Duration(seconds: 20);
-  static const int      maxRetry         = 3;
-
-  // Fallback stream (for demo / offline)
-  static const String fallbackStream =
+  // Player fallback
+  static const String fallbackStreamUrl =
       'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8';
+
+  // Misc
+  static const Duration splashDuration = Duration(seconds: 3);
+  static const Duration toastDuration = Duration(seconds: 3);
+  static const int requestTimestampToleranceSeconds = 300;
 }

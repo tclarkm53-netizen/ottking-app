@@ -1,41 +1,28 @@
 // lib/data/services/device_mode_service.dart
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart'; 
 
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 
 class DeviceModeService {
   const DeviceModeService();
 
-  static const _channel = MethodChannel('ottking/device');
-
-  /// MethodChannel দিয়ে Android TV / Fire TV চেক।
-  /// Platform channel না থাকলে false ফেরত দেয় (exception suppress করা হয়)।
-  Future<bool> isAndroidTvAsync() async {
+  /// Returns true when the app is running on an Android TV / Fire TV.
+  /// On mobile Android this will return false.
+  ///
+  /// Note: A proper TV detection requires querying the PackageManager
+  /// feature `android.software.leanback`.  This simplified check uses
+  /// the presence of the Android platform as a proxy; override via a
+  /// MethodChannel in MainActivity for production TV detection.
+  bool isSmartTv() {
     if (kIsWeb) return false;
-    if (!Platform.isAndroid) return false;
-    try {
-      final result = await _channel.invokeMethod<bool>('isAndroidTV');
-      return result ?? false;
-    } on MissingPluginException {
-      // MethodChannel এখনো implement হয়নি — fallback mode
-      return false;
-    } catch (_) {
+    if (Platform.isAndroid) {
+      // kIsTV is not exposed by Flutter; default to false until a
+      // platform channel confirms the device type.
       return false;
     }
+    return false;
   }
 
-  /// Synchronous fallback — screen metrics পাওয়ার আগে বা
-  /// MethodChannel ছাড়া TV detect করার জন্য।
-  /// ব্যবহার: PlayerScreen এর build() এ MediaQuery থেকে call।
-  bool isSmartTvByScreen({
-    required double screenWidth,
-    required Orientation orientation,
-  }) {
-    // 960 logical pixels ও landscape = TV / tablet attached to TV
-    return screenWidth >= 960 && orientation == Orientation.landscape;
-  }
-
-  String getDeviceLabel(bool isTV) => isTV ? 'Smart TV' : 'Mobile';
+  String getDeviceLabel() => isSmartTv() ? 'Smart TV' : 'Mobile';
 }

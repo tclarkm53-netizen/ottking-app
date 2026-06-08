@@ -1,19 +1,38 @@
 // lib/data/repositories/live_tv_repository.dart
-import '../models/models.dart';
+
+import '../models/channel_model.dart';
 import '../services/secure_api_client.dart';
 
 class LiveTvRepository {
-  const LiveTvRepository(this._api);
-  final SecureApiClient _api;
+  const LiveTvRepository({required this.apiClient});
 
-  Future<CatalogModel> fetchCatalog() async {
-    final d = await _api.post('catalog', {'platform': 'flutter', 'locale': 'en'});
-    return CatalogModel.fromJson(d);
+  final SecureApiClient apiClient;
+
+  Future<ChannelCatalogModel> fetchCatalog() async {
+    final data = await apiClient.post('catalog', {
+      'locale': 'en_US',
+      'platform': 'flutter',
+    });
+    return ChannelCatalogModel.fromJson(data);
   }
 
-  Future<Map<String, dynamic>> login(String email, String password) =>
-      _api.post('auth/login', {'email': email, 'password': password});
+  Future<Map<String, dynamic>> authenticate(
+    String email,
+    String password,
+  ) async {
+    return apiClient.post('auth/login', {
+      'email': email,
+      'password': password,
+    });
+  }
 
-  Future<Map<String, dynamic>> register(String email, String password) =>
-      _api.post('auth/register', {'email': email, 'password': password});
+  Future<Map<String, dynamic>> register(
+    String email,
+    String password,
+  ) async {
+    return apiClient.post('auth/register', {
+      'email': email,
+      'password': password,
+    });
+  }
 }

@@ -1,29 +1,46 @@
 // lib/data/services/secure_storage_service.dart
+
 import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../models/models.dart';
+
+import '../../data/models/channel_model.dart';
 
 class SecureStorageService {
-  const SecureStorageService([FlutterSecureStorage? s])
-      : _s = s ?? const FlutterSecureStorage();
+  SecureStorageService({FlutterSecureStorage? storage})
+      : _storage = storage ?? const FlutterSecureStorage();
 
-  final FlutterSecureStorage _s;
+  final FlutterSecureStorage _storage;
 
-  Future<void>    saveToken(String t)   => _s.write(key: 'token', value: t);
-  Future<String?> readToken()           => _s.read(key: 'token');
-  Future<bool>    hasSession() async    => (await readToken())?.isNotEmpty == true;
+  // ── Auth token ────────────────────────────────────────────────────────────
 
-  Future<void> saveProfile(UserProfile p) =>
-      _s.write(key: 'profile', value: jsonEncode(p.toJson()));
+  Future<void> saveAuthToken(String token) =>
+      _storage.write(key: 'auth_token', value: token);
 
-  Future<UserProfile?> readProfile() async {
-    final r = await _s.read(key: 'profile');
-    if (r == null || r.isEmpty) return null;
-    return UserProfile.fromJson(jsonDecode(r) as Map<String, dynamic>);
+  Future<String?> readAuthToken() => _storage.read(key: 'auth_token');
+
+  Future<bool> hasUserSession() async {
+    final token = await readAuthToken();
+    return token != null && token.isNotEmpty;
   }
 
-  Future<void> clearAll() async {
-    await _s.delete(key: 'token');
-    await _s.delete(key: 'profile');
+  // ── User profile ──────────────────────────────────────────────────────────
+
+  Future<void> saveUserProfile(UserProfileModel profile) =>
+      _storage.write(key: 'user_profile', value: jsonEncode(profile.toJson()));
+
+  Future<UserProfileModel?> readUserProfile() async {
+    final raw = await _storage.read(key: 'user_profile');
+    if (raw == null || raw.isEmpty) return null;
+    return UserProfileModel.fromJson(
+      jsonDecode(raw) as Map<String, dynamic>,
+    );
+  }
+
+  // ── Session ───────────────────────────────────────────────────────────────
+
+  Future<void> clearSession() async {
+    await _storage.delete(key: 'auth_token');
+    await _storage.delete(key: 'user_profile');
   }
 }
