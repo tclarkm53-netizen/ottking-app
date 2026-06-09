@@ -9,10 +9,14 @@ class LiveTvRepository {
   final SecureApiClient apiClient;
 
   Future<ChannelCatalogModel> fetchCatalog() async {
-    final data = await apiClient.post('catalog', {
+  final profile = await secureStorage.readUserProfile();
+
+  final Map<String, dynamic> payload = {
       'locale': 'en_US',
-      'platform': 'flutter',
-    });
+      'platform': 'Ottkibg-apps',
+    };
+    
+    final data = await apiClient.post('catalog',payload;
     return ChannelCatalogModel.fromJson(data);
   }
 
