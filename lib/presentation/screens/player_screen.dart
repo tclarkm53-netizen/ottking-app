@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ ULTRA SPEED OPTIMIZED VERSION — টাচ সোয়াইপ (Swipe Left/Right) + রিমোট কি-প্যাড (১০ নম্বর চ্যানেল) ফিক্সড
+// ✅ ULTRA SPEED OPTIMIZED VERSION — XY FIT (NO CLIPPING) + SETTINGS MENU + SWIPE + KEYPAD
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -26,6 +26,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   bool _showControls = true;
   bool _isLoading = false;
+  bool _isBootPlayerEnabled = true;
 
   Timer? _controlsTimer;
   Timer? _numberInputTimer;
@@ -67,11 +68,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _startControlsTimer();
       }
     });
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
   }
 
   Future<void> _enforceWakelock() async {
@@ -191,12 +187,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (ctrl == null) return;
 
     if (ctrl.value.hasError) {
-      debugPrint("Player controller internal error: ${ctrl.value.errorDescription}");
       _controller?.removeListener(_onControllerUpdate);
       _scheduleRetry();
       return;
     }
-
     setState(() {}); 
   }
 
@@ -373,6 +367,70 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _startControlsTimer();
   }
 
+  void _showStreamDetailsDialog() {
+    final appState = Provider.of<AppState>(context, listen: false);
+    final currentChannel = appState.currentChannel;
+    final size = _controller?.value.size;
+    final resolution = size != null ? "${size.width.toInt()}x${size.height.toInt()}" : "ডিটেক্টিং...";
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.blueAccent),
+            const SizedBox(width: 10),
+            const Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildDetailRow('চ্যানেল নাম:', currentChannel.name),
+            _buildDetailRow('কোয়ালিটি প্রোফাইল:', currentChannel.quality),
+            _buildDetailRow('ভিডিও রেজোলিউশন:', resolution),
+            _buildDetailRow('বাফারিং স্টেট:', _isLoading ? 'লোডিং/বাফারিং' : 'স্ট্যাবল'),
+            const SizedBox(height: 8),
+            const Text('স্ট্রিম ইউআরএল:', style: TextStyle(color: Colors.white60, fontSize: 12)),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.black24, borderRadius: BorderRadius.circular(6)),
+              child: Text(
+                currentChannel.streamUrl,
+                style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('বন্ধ করুন', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Text(title, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold))),
+        ],
+      ),
+    );
+  }
+
   void _exitPlayer() async {
     _controlsTimer?.cancel();
     _numberInputTimer?.cancel();
@@ -435,35 +493,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       onKeyEvent: _handleKey,
       child: Scaffold(
         backgroundColor: Colors.black,
-        // ── 🎯 ফিক্স: GestureDetector এর অন-সোয়াইপ লজিক যুক্ত করা হয়েছে ──
         body: GestureDetector(
           onTap: _toggleControlsVisibility,
           onHorizontalDragEnd: (details) {
-            // Sensitivity থ্রেশহোল্ড সেট করা হয়েছে যাতে হালকা ছোঁয়াতেই চ্যানেল ওলটপালট না হয়
             if (details.primaryVelocity == null) return;
-            
             if (details.primaryVelocity! < -300) {
-              // ডান থেকে বামে সোয়াইপ (Swipe Left) -> পরবর্তী চ্যানেল
-              _safeChannelSwitch(1);
+              _safeChannelSwitch(1); 
             } else if (details.primaryVelocity! > 300) {
-              // বাম থেকে ডানে সোয়াইপ (Swipe Right) -> পূর্ববর্তী চ্যানেল
-              _safeChannelSwitch(-1);
+              _safeChannelSwitch(-1); 
             }
           },
           child: Stack(
             fit: StackFit.expand,
             children: [
               
-              // ভিডিও লেয়ার (BoxFit.cover জুম ফিট)
+              // ── 🎯 ফিক্স: ১০০% নিখুঁত XY FIT (কোনো অংশ কাটবে না, চারকোণা স্ট্রেচ হয়ে ফুলস্ক্রিন হবে) ──
               if (initialized && !_isLoading)
-                SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.cover, 
-                    child: SizedBox(
-                      width: controller.value.size.width,
-                      height: controller.value.size.height,
-                      child: VideoPlayer(controller),
-                    ),
+                Positioned.fill(
+                  child: SizedBox.expand(
+                    child: VideoPlayer(controller),
                   ),
                 )
               else
@@ -488,7 +536,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   left: 0, right: 0, top: 0,
                   child: SafeArea(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
@@ -517,17 +565,59 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                            onPressed: _exitPlayer,
+
+                          // ড্রপডাউন সেটিংস মেনু
+                          Theme(
+                            data: Theme.of(context).copyWith(cardColor: Colors.grey[900]),
+                            child: PopupMenuButton<String>(
+                              icon: const Icon(Icons.settings, color: Colors.white, size: 26),
+                              onOpened: () => _controlsTimer?.cancel(), 
+                              onCanceled: () => _startControlsTimer(),
+                              onSelected: (value) {
+                                _startControlsTimer();
+                                if (value == 'boot_player') {
+                                  setState(() {
+                                    _isBootPlayerEnabled = !_isBootPlayerEnabled;
+                                  });
+                                  _showErrorSnackbar(_isBootPlayerEnabled ? 'বুট প্লেয়ার ইনেবল করা হয়েছে' : 'বুট প্লেয়ার ডিজেবল করা হয়েছে');
+                                } else if (value == 'stream_details') {
+                                  _showStreamDetailsDialog();
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => [
+                                PopupMenuItem<String>(
+                                  value: 'boot_player',
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        _isBootPlayerEnabled ? Icons.check_box : Icons.check_box_outline_blank,
+                                        color: _isBootPlayerEnabled ? Colors.green : Colors.white60,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      const Text('বুট প্লেয়ার ইনেবল', style: TextStyle(color: Colors.white, fontSize: 14)),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuDivider(height: 1),
+                                const PopupMenuItem<String>(
+                                  value: 'stream_details',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.analytics_outlined, color: Colors.blueAccent, size: 20),
+                                      const SizedBox(width: 12),
+                                      const Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 14)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
                 ),
-
-              // 🚫 ফিক্স: মাঝের পুরনো অ্যারো (< >) এবং প্লে/পজ বাটন কন্টেইনার সম্পূর্ণ রিমুভ করা হয়েছে
 
               // বটম কন্ট্রোল বার
               if (_showControls && initialized && !_isLoading)
