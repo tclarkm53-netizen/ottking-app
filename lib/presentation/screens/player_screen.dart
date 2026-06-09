@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ PRODUCTION BUILD FIXED VERSION — FIXED 'black24' MEMBER ERROR + XY FIT + SETTINGS + SWIPE
+// ✅ UPDATED VERSION — REMOVED ALL STREAM DETAILS MENU + ADDED FREE/PREMIUM TAG IN CONTROLLER + LONG PRESS OK
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -31,6 +31,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   Timer? _controlsTimer;
   Timer? _numberInputTimer;
   Timer? _retryTimer;
+  
+  // লং প্রেস ট্র্যাক করার জন্য ভ্যারিয়েবল
+  DateTime? _okKeyDownTime;
+  bool _isOkKeyPressed = false;
 
   String _typedChannelNumber = "";
   int _retryCount = 0;
@@ -149,7 +153,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     try {
       await newController.initialize().timeout(
-        const Duration(seconds: 12),
+        const Duration(seconds: 8),
         onTimeout: () {
           throw TimeoutException('Stream timeout: ${channel.name}');
         },
@@ -200,7 +204,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     if (_retryCount >= _maxRetry) {
       setState(() => _isLoading = false);
-      _showErrorSnackbar('স্ট্রিম লোড ব্যর্থ। পরের চ্যানেলে যান।');
+      _showErrorSnackbar('Failed to load stream. Please switch to the next channel.');
       return;
     }
 
@@ -221,7 +225,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _scheduleRetry();
     } else {
       setState(() => _isLoading = false);
-      _showErrorSnackbar('$channelName লোড হতে ব্যর্থ হয়েছে।');
+      _showErrorSnackbar('$channelName Offline or failed to load.');
     }
   }
 
@@ -236,6 +240,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   void _safeChannelSwitch(int direction) {
     _retryTimer?.cancel();
+    _controlsTimer?.cancel();
     _retryCount = 0;
 
     setState(() {
@@ -256,7 +261,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final appState = Provider.of<AppState>(context, listen: false);
     appState.switchChannel(direction);
 
-    Future.delayed(const Duration(milliseconds: 100), () {
+    Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) _initController();
     });
   }
@@ -286,11 +291,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
       appState.selectChannelByIndex(targetIndex);
 
-      Future.delayed(const Duration(milliseconds: 100), () {
+      Future.delayed(const Duration(milliseconds: 50), () {
         if (mounted) _initController();
       });
     } else {
-      _showErrorSnackbar('$targetNumber নম্বরে কোনো চ্যানেল পাওয়া যায়নি।');
+      _showErrorSnackbar('$targetNumber No channel found at this number.');
     }
   }
 
@@ -302,7 +307,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _typedChannelNumber += number;
     });
 
-    _numberInputTimer = Timer(const Duration(milliseconds: 1800), () {
+    _numberInputTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted && _typedChannelNumber.isNotEmpty) {
         final targetNum = int.tryParse(_typedChannelNumber);
         if (targetNum != null) {
@@ -315,39 +320,60 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   void _handleKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
+    final key = event.logicalKeyboardKey;
+    final isOkKey = key == LogicalKeyboardKey.enter || 
+                     key == LogicalKeyboardKey.select || 
+                     key == LogicalKeyboardKey.space;
 
-    final keyLabel = event.logicalKey.keyLabel;
+    if (event is KeyDownEvent) {
+      final keyLabel = event.logicalKey.keyLabel;
+      if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
+        _handleNumberInput(keyLabel);
+        return;
+      }
 
-    if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
-      _handleNumberInput(keyLabel);
-      return;
-    }
+      if (key == LogicalKeyboardKey.arrowUp) {
+        _safeChannelSwitch(-1);
+        return;
+      } else if (key == LogicalKeyboardKey.arrowDown) {
+        _safeChannelSwitch(1);
+        return;
+      }
 
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      _safeChannelSwitch(-1);
-      return;
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      _safeChannelSwitch(1);
-      return;
-    }
+      if (isOkKey) {
+        if (!_isOkKeyPressed) {
+          _isOkKeyPressed = true;
+          _okKeyDownTime = DateTime.now();
+        }
+      }
 
-    if (!_showControls) {
-      setState(() => _showControls = true);
+      if (!_showControls) {
+        setState(() => _showControls = true);
+        _startControlsTimer();
+        return;
+      }
+
       _startControlsTimer();
-      return;
-    }
 
-    _startControlsTimer();
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-        event.logicalKey == LogicalKeyboardKey.escape ||
-        event.logicalKey == LogicalKeyboardKey.goBack) {
-      _exitPlayer();
-    } else if (event.logicalKey == LogicalKeyboardKey.space ||
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.select) {
-      _togglePlayPause();
+      if (key == LogicalKeyboardKey.arrowLeft ||
+          key == LogicalKeyboardKey.escape ||
+          key == LogicalKeyboardKey.goBack) {
+        _exitPlayer();
+      }
+    } 
+    
+    else if (event is KeyUpEvent) {
+      if (isOkKey && _isOkKeyPressed) {
+        _isOkKeyPressed = false;
+        if (_okKeyDownTime != null) {
+          final duration = DateTime.now().difference(_okKeyDownTime!);
+          if (duration.inMilliseconds >= 800) {
+            _showTVRemoteSettingsDialog(); // লং প্রেস সেটিংস ওপেন
+          } else {
+            _togglePlayPause();
+          }
+        }
+      }
     }
   }
 
@@ -367,68 +393,59 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _startControlsTimer();
   }
 
-  void _showStreamDetailsDialog() {
-    final appState = Provider.of<AppState>(context, listen: false);
-    final currentChannel = appState.currentChannel;
-    final size = _controller?.value.size;
-    final resolution = size != null ? "${size.width.toInt()}x${size.height.toInt()}" : "ডিটেক্টিং...";
-
+  // রিমোট সেটিংস ডায়ালগ (এখানে স্ট্রিম ডিটেইলস এর কিছুই নেই)
+  void _showTVRemoteSettingsDialog() {
+    _controlsTimer?.cancel();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
-          children: [
-            Icon(Icons.info_outline, color: Colors.blueAccent),
-            SizedBox(width: 10),
-            Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDetailRow('চ্যানেল নাম:', currentChannel.name),
-            _buildDetailRow('কোয়ালিটি প্রোফাইল:', currentChannel.quality),
-            _buildDetailRow('ভিডিও রেজোলিউশন:', resolution),
-            _buildDetailRow('বাফারিং স্টেট:', _isLoading ? 'লোডিং/বাফারিং' : 'স্ট্যাবল'),
-            const SizedBox(height: 8),
-            const Text('স্ট্রিম ইউআরএল:', style: TextStyle(color: Colors.white60, fontSize: 12)),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.all(8),
-              // ── 🎯 ফিক্স: Colors.black24 এর পরিবর্তে এখানে Colors.black26 ব্যবহার করা হয়েছে ──
-              decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(6)),
-              child: Text(
-                currentChannel.streamUrl,
-                style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.grey[950],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: const Border.all(color: Colors.white10, width: 1),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('বন্ধ করুন', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          Text(title, style: const TextStyle(color: Colors.white60, fontSize: 13)),
-          const SizedBox(width: 8),
-          Expanded(child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold))),
-        ],
-      ),
+              title: const Row(
+                children: [
+                  Icon(Icons.tv_settings_rounded, color: Colors.redAccent, size: 28),
+                  SizedBox(width: 12),
+                  Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    activeColor: Colors.green,
+                    title: const Text('Enable Boot Player', style: TextStyle(color: Colors.white, fontSize: 16)),
+                    subtitle: const Text('When the app is launched, it will open directly in the player.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                    value: _isBootPlayerEnabled,
+                    onChanged: (bool value) {
+                      setDialogState(() {
+                        _isBootPlayerEnabled = value;
+                      });
+                      setState(() {});
+                      _showErrorSnackbar(_isBootPlayerEnabled ? 'Boot Player has been enabled.' : 'Boot Player has been disabled.');
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  autofocus: true,
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _startControlsTimer();
+                  },
+                  child: const Text('Close', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                )
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -488,6 +505,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final initialized = controller != null && controller.value.isInitialized;
     final isLive = controller?.value.duration == Duration.zero || controller?.value.duration == null;
 
+    // ── 🎯 নোট: আপনার AppState এ চ্যানেলটি প্রিমিয়াম কি না তা চেক করার লজিক (isPremium ট্রু বা ফলস অনুসারে) ──
+    // যদি আপনার ভ্যারিয়েবলের নাম অন্য হয়, শুধু 'currentChannel.isPremium' এর জায়গায় সেটি বসিয়ে দিন।
+    final bool isPremiumChannel = currentChannel.isPremium ?? false; 
+
     return KeyboardListener(
       focusNode: _focusNode,
       autofocus: true,
@@ -524,8 +545,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       const SizedBox(height: 16),
                       if (_retryCount > 0)
                         Text(
-                          'পুনরায় চেষ্টা করা হচ্ছে... ($_retryCount/$_maxRetry)',
+                          'Retrying... ($_retryCount/$_maxRetry)',
                           style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                        )
+                      else if (_isLoading)
+                        const Text(
+                          'Establishing connection...',
+                          style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                     ],
                   ),
@@ -563,11 +589,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   '${currentChannel.name}  •  ${currentChannel.quality}',
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                 ),
+                                const SizedBox(width: 10),
+                                
+                                // ── 🎯 ফিক্সড: কন্ট্রোলারে সরাসরি ফ্রি / প্রিমিয়াম ট্যাগ প্রদর্শন ──
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isPremiumChannel ? Colors.amber[800] : Colors.green[700],
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    isPremiumChannel ? 'PREMIUM' : 'FREE',
+                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
 
-                          // ড্রপডাউন সেটিংস মেনু
+                          // টপ সেটিংস গিয়ার বাটন (পপআপ থেকে স্ট্রিম ডিটেইলস পুরোপুরি আউট, শুধু বুট অপশন রয়েছে)
                           Theme(
                             data: Theme.of(context).copyWith(cardColor: Colors.grey[900]),
                             child: PopupMenuButton<String>(
@@ -580,9 +620,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                   setState(() {
                                     _isBootPlayerEnabled = !_isBootPlayerEnabled;
                                   });
-                                  _showErrorSnackbar(_isBootPlayerEnabled ? 'বুট প্লেয়ার ইনেবল করা হয়েছে' : 'বুট প্লেয়ার ডিজেবল করা হয়েছে');
-                                } else if (value == 'stream_details') {
-                                  _showStreamDetailsDialog();
+                                  _showErrorSnackbar(_isBootPlayerEnabled ? 'Boot Player has been enabled.' : 'Boot Player has been disabled');
                                 }
                               },
                               itemBuilder: (BuildContext context) => [
@@ -596,18 +634,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                         size: 20,
                                       ),
                                       const SizedBox(width: 12),
-                                      const Text('বুট প্লেয়ার ইনেবল', style: TextStyle(color: Colors.white, fontSize: 14)),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuDivider(height: 1),
-                                const PopupMenuItem<String>(
-                                  value: 'stream_details',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.analytics_outlined, color: Colors.blueAccent, size: 20),
-                                      const SizedBox(width: 12),
-                                      const Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 14)),
+                                      const Text('Enable Boot Player', style: TextStyle(color: Colors.white, fontSize: 14)),
                                     ],
                                   ),
                                 ),
