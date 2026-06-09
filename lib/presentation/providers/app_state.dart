@@ -74,9 +74,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Smart TV Mode Setup (BuildContext এর সমস্যা সমাধানের জন্য নতুন মেথড) ──
-  /// এই মেথডটি অ্যাপের প্রথম স্ক্রিনের (যেমন Splash বা Home) build মেথড অথবা 
-  /// initState এর ভেতর WidgetsBinding.instance.addPostFrameCallback এ context সহ কল করবেন।
+  // ── Smart TV Mode Setup ──
   Future<void> updateDeviceMode(BuildContext context) async {
     final bool detectedTv = await deviceModeService.isSmartTv(context);
     if (isSmartTv != detectedTv) {
@@ -139,6 +137,9 @@ class AppState extends ChangeNotifier {
     try {
       final res = await repository.authenticate(email, password);
       await _handleAuthResponse(res, email);
+      
+      // ফিক্স ১: লগইন সফল হওয়ার পর তৎক্ষণাৎ নতুন প্রিমিয়াম ক্যাটালগ লোড করা হলো
+      await loadCatalog(); 
     } catch (e) {
       errorMessage = e.toString();
     }
@@ -151,6 +152,9 @@ class AppState extends ChangeNotifier {
     try {
       final res = await repository.register(email, password);
       await _handleAuthResponse(res, email);
+      
+      // ফিক্স ২: রেজিস্ট্রেশন সফল হওয়ার পর তৎক্ষণাৎ নতুন ক্যাটালগ লোড করা হলো
+      await loadCatalog();
     } catch (e) {
       errorMessage = e.toString();
     }
@@ -177,6 +181,11 @@ class AppState extends ChangeNotifier {
     await secureStorage.clearSession();
     isAuthenticated = false;
     userProfile = null;
+    
+    // ফিক্স ৩: লগআউট করার পর প্রিমিয়াম চ্যানেলগুলো সরিয়ে আবার নরমাল ফ্রি ক্যাটালগ লোড করা হলো
+    _currentChannelIndex = 0;
+    await loadCatalog(); 
+    
     notifyListeners();
   }
 
@@ -224,6 +233,7 @@ class AppState extends ChangeNotifier {
     logoUrl: '',
     description: 'Secure preview channel',
     quality: 'HD',
+    isPremium: 0, // ফিক্স ৪: মডেল আপডেটের সাথে সামঞ্জস্য রাখা হলো
   );
 
   ChannelModel get currentChannel =>
