@@ -7,9 +7,9 @@ class AppConstants {
   static const String appTagline = 'Secure Live TV for every screen';
 
   // API endpoints
-  static const String defaultApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
-  static const String localAndroidApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
-  static const String localDesktopApiBaseUrl = 'https://verify-app.alwaysdata.net/api';
+  static const String defaultApiBaseUrl = 'https://verify-app.alwaysdata.net/api2';
+  static const String localAndroidApiBaseUrl = 'https://verify-app.alwaysdata.net/api2';
+  static const String localDesktopApiBaseUrl = 'https://verify-app.alwaysdata.net/api2';
 
   // Security — in production, load these from environment / secure vault
   static const String apiKeyId = 'ottking-mobile';
