@@ -1,5 +1,5 @@
 // lib/presentation/screens/home_screen.dart
-// ✅ 100% TV & REMOTE OPTIMIZED GLOBAL UI — FORCES TV VIEW ON ALL DEVICES WITH PERFECT D-PAD FOCUS
+// ✅ 100% PRODUCTION READY — FIXED FOCUS BUILDER ERRORS & FULLY OPTIMIZED FOR TV REMOTE
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,26 +22,41 @@ class _HomeScreenState extends State<HomeScreen> {
   
   int _selectedCategoryIndex = 0; 
 
+  // রিমোট ফোকাস স্টেট ট্র্যাকিংয়ের জন্য নোড ও বুলিয়ান লিস্ট
+  final FocusNode _settingsFocusNode = FocusNode(debugLabel: 'settings-focus');
+  bool _settingsHasFocus = false;
+  
+  // ক্যাটাগরির ফোকাস ট্র্যাকিং স্টেট
+  final Map<int, bool> _categoryFocusStates = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _settingsFocusNode.addListener(() {
+      setState(() {
+        _settingsHasFocus = _settingsFocusNode.hasFocus;
+      });
+    });
+  }
+
   @override
   void dispose() {
     _rootFocusNode.dispose();
     _pageController.dispose();
+    _settingsFocusNode.dispose();
     super.dispose();
   }
 
-  // ── 🎯 রিমোটের গ্লোবাল কী-হ্যান্ডেলার ফিক্স ──
   void _handleKeyEvent(KeyEvent event, AppState appState, List<dynamic> filteredChannels) {
     if (event is! KeyDownEvent) return;
 
     final key = event.logicalKey;
 
-    // যদি রিমোটের ব্যাক বাটন প্রেস করা হয় তবে অ্যাপ যেন হুট করে ক্লোজ না হয়
     if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
       SystemChannels.platform.invokeMethod('SystemNavigator.pop');
       return;
     }
 
-    // প্লেয়ার স্ক্রিনের সাথে সামঞ্জস্য রেখে লেফট/রাইট রিমোট চ্যানেল ট্র্যাকিং
     if (key == LogicalKeyboardKey.arrowRight && FocusScope.of(context).focusedChild == null) {
       appState.switchChannel(1);
     } else if (key == LogicalKeyboardKey.arrowLeft && FocusScope.of(context).focusedChild == null) {
@@ -53,10 +68,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
 
-    // ── 🎯 ফিক্স: রিকোয়েস্ট অনুযায়ী মোবাইল ও টিভি উভয় ক্ষেত্রেই ফিক্সড 'টিভি ইউআই' ফোর্স করা হলো ──
+    // মোবাইল ও টিভি উভয় ডিভাইসের জন্য ল্যান্ডস্কেপ টিভি মোড ফোর্স করা হলো
     const bool isTV = true; 
 
-    // ক্যাটাগরি লিস্টের শুরুতে "All" অপশন যোগ করা
     final List<dynamic> extendedCategories = [];
     if (appState.categories.isNotEmpty) {
       extendedCategories.add({'name': 'All', 'icon': '🌐'}); 
@@ -67,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ? extendedCategories[_selectedCategoryIndex]['name']
         : 'All';
 
-    // ক্যাটাগরি ফিল্টারিং লজিক
     final filteredChannels = appState.channels.where((channel) {
       if (currentCategoryName == 'All' || currentCategoryName.isEmpty) return true;
       return channel.category.toLowerCase() == currentCategoryName.toLowerCase();
@@ -95,24 +108,27 @@ class _HomeScreenState extends State<HomeScreen> {
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 24),
-              // রিমোট ফোকাস ক্যাচ করার জন্যIconButton-কে Focus উইজেট দিয়ে র‍্যাপ করা হয়েছে
+              // ── 🎯 ফিক্সড সেটিংস বাটন ফোকাস লজিক ──
               child: Focus(
-                debugLabel: 'settings-btn',
-                builder: (context, focusNode, child) {
-                  final hasFocus = focusNode.hasFocus;
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: hasFocus ? const Color(0xFF06B6D4).withOpacity(0.2) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: hasFocus ? const Color(0xFF06B6D4) : Colors.transparent, width: 1.5),
+                focusNode: _settingsFocusNode,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _settingsHasFocus ? const Color(0xFF06B6D4).withOpacity(0.2) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _settingsHasFocus ? const Color(0xFF06B6D4) : Colors.transparent, 
+                      width: 1.5,
                     ),
-                    child: IconButton(
-                      focusNode: focusNode,
-                      icon: Icon(Icons.settings_suggest_rounded, color: hasFocus ? const Color(0xFF06B6D4) : Colors.white, size: 26),
-                      onPressed: () => Navigator.pushNamed(context, '/settings'),
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.settings_suggest_rounded, 
+                      color: _settingsHasFocus ? const Color(0xFF06B6D4) : Colors.white, 
+                      size: 26,
                     ),
-                  );
-                },
+                    onPressed: () => Navigator.pushNamed(context, '/settings'),
+                  ),
+                ),
               ),
             ),
           ],
@@ -123,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 physics: const BouncingScrollPhysics(),
                 slivers: [
                   
-                  // ১. ব্যানার সেকশন
+                  // ১. ব্যানার স্লাইডার সেকশন
                   if (appState.banners.isNotEmpty)
                     SliverToBoxAdapter(
                       child: SizedBox(
@@ -180,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                  // ২. ক্যাটাগরি চিপস সেকশন (D-Pad রিমোট সাপোর্টেড)
+                  // ২. ক্যাটাগরি সেকশন (D-Pad রিমোট ফোকাস ফিক্সড)
                   if (extendedCategories.isNotEmpty)
                     SliverToBoxAdapter(
                       child: Padding(
@@ -199,40 +215,41 @@ class _HomeScreenState extends State<HomeScreen> {
                                 itemBuilder: (context, index) {
                                   final category = extendedCategories[index];
                                   final isSelected = _selectedCategoryIndex == index;
+                                  final hasFocus = _categoryFocusStates[index] ?? false;
                                   
+                                  // ── 🎯 ফিক্সড ক্যাটাগরি চিপ ফোকাস লজিক ──
                                   return Padding(
                                     padding: const EdgeInsets.only(right: 12),
-                                    // অ্যাকশন চিপকে ফোকাস নোড দিয়ে রিমোট ফ্রেন্ডলি করা হয়েছে
                                     child: Focus(
-                                      debugLabel: 'category-$index',
-                                      builder: (context, focusNode, child) {
-                                        final hasFocus = focusNode.hasFocus;
-                                        return ActionChip(
-                                          focusNode: focusNode,
-                                          onPressed: () {
-                                            setState(() => _selectedCategoryIndex = index);
-                                          },
-                                          backgroundColor: hasFocus 
-                                              ? const Color(0xFF06B6D4) 
-                                              : (isSelected ? const Color(0xFF06B6D4).withOpacity(0.4) : const Color(0xFF1E293B)),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(12),
-                                            side: BorderSide(
-                                              color: hasFocus ? Colors.white : (isSelected ? const Color(0xFF06B6D4) : Colors.white.withOpacity(0.05)),
-                                              width: hasFocus ? 2.0 : 1.0,
-                                            ),
-                                          ),
-                                          avatar: Text(category['icon'], style: const TextStyle(fontSize: 16)),
-                                          label: Text(
-                                            category['name'], 
-                                            style: TextStyle(
-                                              color: hasFocus || isSelected ? Colors.white : Colors.white70, 
-                                              fontWeight: FontWeight.w600, 
-                                              fontSize: 13
-                                            ),
-                                          ),
-                                        );
+                                      onFocusChange: (focused) {
+                                        setState(() {
+                                          _categoryFocusStates[index] = focused;
+                                        });
                                       },
+                                      child: ActionChip(
+                                        onPressed: () {
+                                          setState(() => _selectedCategoryIndex = index);
+                                        },
+                                        backgroundColor: hasFocus 
+                                            ? const Color(0xFF06B6D4) 
+                                            : (isSelected ? const Color(0xFF06B6D4).withOpacity(0.4) : const Color(0xFF1E293B)),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: BorderSide(
+                                            color: hasFocus ? Colors.white : (isSelected ? const Color(0xFF06B6D4) : Colors.white.withOpacity(0.05)),
+                                            width: hasFocus ? 2.0 : 1.0,
+                                          ),
+                                        ),
+                                        avatar: Text(category['icon'], style: const TextStyle(fontSize: 16)),
+                                        label: Text(
+                                          category['name'], 
+                                          style: TextStyle(
+                                            color: hasFocus || isSelected ? Colors.white : Colors.white70, 
+                                            fontWeight: FontWeight.w600, 
+                                            fontSize: 13
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   );
                                 },
@@ -244,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
-                  // ৩. চ্যানেল লিস্ট হেডার
+                  // ৩. লাইভ চ্যানেল হেডার সেকশন
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 40),
@@ -258,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                  // ── 🎯 ৪. শতভাগ রিমোট সাপোর্টেড চ্যানেল গ্রিড ভিউ (SliverGrid ফিক্স) ──
+                  // ৪. চ্যানেল গ্রিড ভিউ (SliverGrid রিমোট কন্ট্রোল সাপোর্ট)
                   filteredChannels.isEmpty
                       ? const SliverToBoxAdapter(
                           child: Padding(
@@ -270,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 4),
                           sliver: SliverGrid(
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 5, // ৫ টি কলাম সম্বলিত প্যানোরামিক টিভি গ্রিড
+                              crossAxisCount: 5, 
                               mainAxisSpacing: 16,
                               crossAxisSpacing: 16,
                               childAspectRatio: 1.2, 
@@ -346,7 +363,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                   
-                  // নিচের স্পেসিং ফিক্স
                   const SliverToBoxAdapter(child: SizedBox(height: 40)),
                 ],
               ),
