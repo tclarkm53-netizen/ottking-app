@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ ULTRA SPEED OPTIMIZED VERSION — কি-প্যাড ডাবল ডিজিট (১০ নম্বর চ্যানেল) + স্পিড বুস্ট ফিক্সড
+// ✅ ULTRA SPEED OPTIMIZED VERSION — টাচ সোয়াইপ (Swipe Left/Right) + রিমোট কি-প্যাড (১০ নম্বর চ্যানেল) ফিক্সড
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -270,7 +270,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _switchToSpecificChannelNumber(int targetNumber) {
     final appState = Provider.of<AppState>(context, listen: false);
     final allChannels = appState.channels;
-    final targetIndex = targetNumber - 1; // ডিরেক্ট ইনডেক্সিং (১০ নম্বর চ্যানেল = ইনডেক্স ৯)
+    final targetIndex = targetNumber - 1;
 
     if (targetIndex >= 0 && targetIndex < allChannels.length) {
       _retryTimer?.cancel();
@@ -300,23 +300,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
-  // ── 🎯 ফিক্স: রিমোট কি-প্যাড মাল্টিপল ডিজিট (১০ নম্বর) ইনপুট কম্বিনেশন লজিক ──
   void _handleNumberInput(String number) {
-    _numberInputTimer?.cancel(); // আগের চলমান টাইমার ক্যানসেল করুন
+    _numberInputTimer?.cancel();
     
     setState(() {
       _showControls = true;
-      _typedChannelNumber += number; // নতুন চাপ দেওয়া সংখ্যা আগের সংখ্যার পাশে যুক্ত হবে (যেমন: '1' + '0' = '10')
+      _typedChannelNumber += number;
     });
 
-    // টাইমার ডিলে ১৮০০ মিলি-সেকেন্ড করা হয়েছে যাতে ইউজার রিমোটে ১ চেপে ০ চাপার পর্যাপ্ত সময় পান
     _numberInputTimer = Timer(const Duration(milliseconds: 1800), () {
       if (mounted && _typedChannelNumber.isNotEmpty) {
         final targetNum = int.tryParse(_typedChannelNumber);
         if (targetNum != null) {
           _switchToSpecificChannelNumber(targetNum);
         }
-        setState(() => _typedChannelNumber = ""); // ইনপুট বাফার ক্লিয়ার
+        setState(() => _typedChannelNumber = "");
         _startControlsTimer();
       }
     });
@@ -327,7 +325,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     final keyLabel = event.logicalKey.keyLabel;
 
-    // ০ থেকে ৯ কি-প্যাড বাটন প্রেস ডিটেকশন
     if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
       _handleNumberInput(keyLabel);
       return;
@@ -438,8 +435,21 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       onKeyEvent: _handleKey,
       child: Scaffold(
         backgroundColor: Colors.black,
+        // ── 🎯 ফিক্স: GestureDetector এর অন-সোয়াইপ লজিক যুক্ত করা হয়েছে ──
         body: GestureDetector(
           onTap: _toggleControlsVisibility,
+          onHorizontalDragEnd: (details) {
+            // Sensitivity থ্রেশহোল্ড সেট করা হয়েছে যাতে হালকা ছোঁয়াতেই চ্যানেল ওলটপালট না হয়
+            if (details.primaryVelocity == null) return;
+            
+            if (details.primaryVelocity! < -300) {
+              // ডান থেকে বামে সোয়াইপ (Swipe Left) -> পরবর্তী চ্যানেল
+              _safeChannelSwitch(1);
+            } else if (details.primaryVelocity! > 300) {
+              // বাম থেকে ডানে সোয়াইপ (Swipe Right) -> পূর্ববর্তী চ্যানেল
+              _safeChannelSwitch(-1);
+            }
+          },
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -517,36 +527,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // সেন্টার কন্ট্রোলস
-              if (_showControls)
-                Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 32),
-                        onPressed: () => _safeChannelSwitch(-1),
-                      ),
-                      const SizedBox(width: 40),
-                      GestureDetector(
-                        onTap: _togglePlayPause,
-                        child: Container(
-                          width: 65, height: 65,
-                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                          child: Icon(
-                            initialized && !_isLoading && controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white, size: 40,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 40),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 32),
-                        onPressed: () => _safeChannelSwitch(1),
-                      ),
-                    ],
-                  ),
-                ),
+              // 🚫 ফিক্স: মাঝের পুরনো অ্যারো (< >) এবং প্লে/পজ বাটন কন্টেইনার সম্পূর্ণ রিমুভ করা হয়েছে
 
               // বটম কন্ট্রোল বার
               if (_showControls && initialized && !_isLoading)
@@ -629,7 +610,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
 
-              // নম্বর ইনপুট ওভারলে (স্ক্রিনের মাঝে বড় করে টাইপ করা নম্বরটি দেখাবে)
+              // নম্বর ইনপুট ওভারলে
               if (_typedChannelNumber.isNotEmpty)
                 Center(
                   child: Container(
