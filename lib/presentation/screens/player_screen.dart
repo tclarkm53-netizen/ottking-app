@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ ULTRA SPEED OPTIMIZED VERSION — XY FIT (NO CLIPPING) + SETTINGS MENU + SWIPE + KEYPAD
+// ✅ PRODUCTION BUILD FIXED VERSION — FIXED 'black24' MEMBER ERROR + XY FIT + SETTINGS + SWIPE
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -378,11 +378,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: Row(
+        title: const Row(
           children: [
-            const Icon(Icons.info_outline, color: Colors.blueAccent),
-            const SizedBox(width: 10),
-            const Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            Icon(Icons.info_outline, color: Colors.blueAccent),
+            SizedBox(width: 10),
+            Text('স্ট্রিম ডিটেইলস', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
@@ -398,7 +398,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             const SizedBox(height: 4),
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.black24, borderRadius: BorderRadius.circular(6)),
+              // ── 🎯 ফিক্স: Colors.black24 এর পরিবর্তে এখানে Colors.black26 ব্যবহার করা হয়েছে ──
+              decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(6)),
               child: Text(
                 currentChannel.streamUrl,
                 style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'monospace'),
@@ -507,7 +508,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             fit: StackFit.expand,
             children: [
               
-              // ── 🎯 ফিক্স: ১০০% নিখুঁত XY FIT (কোনো অংশ কাটবে না, চারকোণা স্ট্রেচ হয়ে ফুলস্ক্রিন হবে) ──
+              // XY FIT লেয়ার
               if (initialized && !_isLoading)
                 Positioned.fill(
                   child: SizedBox.expand(
