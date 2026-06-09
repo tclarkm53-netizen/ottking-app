@@ -2,13 +2,14 @@
 
 class ChannelModel {
   const ChannelModel({
-    required this.id,
+    required this.id, // এখন এটি ডাইনামিক হ্যান্ডেল করবে
     required this.name,
     required this.category,
     required this.streamUrl,
     required this.logoUrl,
     required this.description,
     required this.quality,
+    required this.isPremium, // ফিক্স ১: এটি ব্যাকএন্ড ফিল্টারিং এর সাথে লক/আনলক দেখাতে কাজে লাগবে
   });
 
   final String id;
@@ -18,16 +19,19 @@ class ChannelModel {
   final String logoUrl;
   final String description;
   final String quality;
+  final int isPremium; // ০ = ফ্রি, ১ = প্রিমিয়াম
 
   factory ChannelModel.fromJson(Map<String, dynamic> json) {
     return ChannelModel(
-      id: json['id'] as String? ?? '',
+      // ফিক্স ২: পিএইচপি থেকে আইডি ইন্টিজার (int) আসলেও ক্র্যাশ না করে স্ট্রিং-এ কনভার্ট করবে
+      id: json['id']?.toString() ?? '', 
       name: json['name'] as String? ?? '',
       category: json['category'] as String? ?? '',
       streamUrl: json['streamUrl'] as String? ?? '',
       logoUrl: json['logoUrl'] as String? ?? '',
       description: json['description'] as String? ?? '',
       quality: json['quality'] as String? ?? 'HD',
+      isPremium: json['isPremium'] as int? ?? 0,
     );
   }
 
@@ -39,6 +43,7 @@ class ChannelModel {
         'logoUrl': logoUrl,
         'description': description,
         'quality': quality,
+        'isPremium': isPremium,
       };
 }
 
@@ -74,7 +79,7 @@ class BannerModel {
       title: json['title'] as String? ?? '',
       subtitle: json['subtitle'] as String? ?? '',
       imageUrl: json['imageUrl'] as String? ?? '',
-      channelId: json['channelId'] as String? ?? '',
+      channelId: json['channelId']?.toString() ?? '', // সেফ কনভার্সন
     );
   }
 }
@@ -97,7 +102,7 @@ class SubscriptionPlanModel {
   factory SubscriptionPlanModel.fromJson(Map<String, dynamic> json) {
     return SubscriptionPlanModel(
       name: json['name'] as String? ?? '',
-      price: json['price'] as String? ?? '',
+      price: json['price']?.toString() ?? '', // প্রাইস ইনটিজার বা ডাবল আসলেও সেফ থাকবে
       description: json['description'] as String? ?? '',
       badge: json['badge'] as String? ?? '',
       features: List<String>.from((json['features'] as List<dynamic>?) ?? []),
