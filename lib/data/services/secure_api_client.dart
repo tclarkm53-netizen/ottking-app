@@ -28,6 +28,14 @@ class SecureApiClient {
     String endpoint,
     Map<String, dynamic> payload,
   ) async {
+
+if (endpoint == 'catalog') {
+      final profile = await secureStorage.readUserProfile();
+      if (profile != null && profile.email.isNotEmpty) {
+        payload['email'] = profile.email;
+      }
+    }
+    
     final timestamp = DateTime.now().toUtc().toIso8601String();
     final body = jsonEncode(payload);
     final encryptedBody = encryptionService.encrypt(body);
