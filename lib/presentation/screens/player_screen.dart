@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ FULL FIXED VERSION — চ্যানেল লোড স্পিড + Wakelock + Auto-Retry সব ঠিক করা হয়েছে
+// ✅ ULTRA SPEED OPTIMIZED VERSION — কি-প্যাড ডাবল ডিজিট (১০ নম্বর চ্যানেল) + স্পিড বুস্ট ফিক্সড
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -27,8 +27,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   bool _showControls = true;
   bool _isLoading = false;
 
-  AppState? _appState;
-
   Timer? _controlsTimer;
   Timer? _numberInputTimer;
   Timer? _retryTimer;
@@ -37,18 +35,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   int _retryCount = 0;
   static const int _maxRetry = 3;
 
-  // ── FIX ১: WidgetsBindingObserver — অ্যাপ background/foreground হলে wakelock পুনরুদ্ধার ──
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _enforceWakelock();
-      // foreground এ ফিরলে যদি controller এরর থাকে তাহলে retry
       if (_controller?.value.hasError == true) {
         _retryCount = 0;
         _initController();
       }
     } else if (state == AppLifecycleState.paused) {
-      // background এ গেলে pause করো কিন্তু dispose না
       _controller?.pause();
     }
   }
@@ -56,7 +51,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // lifecycle observer register
+    WidgetsBinding.instance.addObserver(this);
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
@@ -68,7 +63,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _appState = Provider.of<AppState>(context, listen: false);
         _initController();
         _startControlsTimer();
       }
@@ -78,15 +72,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // FIX ২: context.select দিয়ে শুধু দরকারি state নিচ্ছি, অতিরিক্ত rebuild বন্ধ
-    _appState = context.watch<AppState>();
   }
 
-  // ── FIX ৩: Native Android window flag + WakelockPlus একসাথে ──
   Future<void> _enforceWakelock() async {
     try {
       await WakelockPlus.enable();
-      // Android native window level এ FLAG_KEEP_SCREEN_ON set করে
       await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } catch (e) {
       debugPrint("Wakelock error: $e");
@@ -107,12 +97,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (_showControls) _startControlsTimer();
   }
 
-  // ── FIX ৪: পুরনো controller কে background এ dispose — UI block হয় না ──
-  void _disposeControllerInBackground(
-    VideoPlayerController old,
-    VoidCallback? listener,
-  ) {
-    // await নেই ইচ্ছাকৃত — background এ চলবে, নতুন controller এর জন্য অপেক্ষা করবে না
+  void _disposeControllerInBackground(VideoPlayerController old, VoidCallback? listener) {
     Future(() async {
       try {
         if (listener != null) old.removeListener(listener);
@@ -125,24 +110,26 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initController() async {
-    if (!mounted || _appState == null) return;
+    if (!mounted) return;
 
-    final channel = _appState!.currentChannel;
+    final appState = Provider.of<AppState>(context, listen: false);
+    final channel = appState.currentChannel;
 
-    // একই চ্যানেল আবার load করার দরকার নেই
     if (_activeChannelId == channel.id &&
         _controller != null &&
         _controller!.value.isInitialized &&
         !_controller!.value.hasError) {
+      setState(() => _isLoading = false);
       return;
     }
+
+    _retryTimer?.cancel();
 
     setState(() {
       _isLoading = true;
       _activeChannelId = channel.id;
     });
 
-    // FIX ৫: পুরনো controller background এ সরিয়ে দাও, await করো না
     if (_controller != null) {
       final oldCtrl = _controller!;
       final oldListener = _controllerListener;
@@ -152,14 +139,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
 
     final newController = VideoPlayerController.networkUrl(
-      Uri.parse(channel.streamUrl),
+      Uri.parse(channel.streamUrl.trim()),
       videoPlayerOptions: VideoPlayerOptions(
         allowBackgroundPlayback: false,
         mixWithOthers: false,
       ),
       httpHeaders: {
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
         'Accept': '*/*',
         'Connection': 'keep-alive',
       },
@@ -167,98 +153,81 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     try {
       await newController.initialize().timeout(
-        const Duration(seconds: 20), // timeout — আটকে থাকবে না
+        const Duration(seconds: 12),
         onTimeout: () {
           throw TimeoutException('Stream timeout: ${channel.name}');
         },
       );
 
-      if (!mounted) {
+      if (!mounted || _activeChannelId != channel.id) {
         newController.dispose();
         return;
       }
 
       await newController.play();
-      _enforceWakelock(); // play শুরু হলে wakelock confirm করো
+      _enforceWakelock();
 
-      // FIX ৬: Listener একটি named method — detach/attach নিরাপদ
       _controllerListener = _onControllerUpdate;
       newController.addListener(_controllerListener!);
 
-      _retryCount = 0; // সফল হলে retry count রিসেট
+      _retryCount = 0;
 
-      if (mounted) {
-        setState(() {
-          _controller = newController;
-          _isLoading = false;
-        });
-      }
-    } on TimeoutException catch (e) {
-      debugPrint("Timeout: $e");
-      newController.dispose();
-      _handleLoadError(channel.name, isTimeout: true);
+      setState(() {
+        _controller = newController;
+        _isLoading = false;
+      });
     } catch (e) {
-      debugPrint("Init error: $e");
+      debugPrint("Init Error caught: $e");
       newController.dispose();
-      _handleLoadError(channel.name);
+      if (_activeChannelId == channel.id) {
+        _handleLoadError(channel.name);
+      }
     }
   }
 
-  // FIX ৭: Controller error listener — error হলে auto-retry
   void _onControllerUpdate() {
     if (!mounted) return;
-
     final ctrl = _controller;
     if (ctrl == null) return;
 
-    // error detect হলে auto-retry
     if (ctrl.value.hasError) {
-      debugPrint("Player error: ${ctrl.value.errorDescription}");
+      debugPrint("Player controller internal error: ${ctrl.value.errorDescription}");
+      _controller?.removeListener(_onControllerUpdate);
       _scheduleRetry();
       return;
     }
 
-    setState(() {}); // UI refresh
+    setState(() {}); 
   }
 
-  // FIX ৮: Auto retry logic — ৩ বার চেষ্টা করবে
   void _scheduleRetry() {
     _retryTimer?.cancel();
+    if (!mounted) return;
+
     if (_retryCount >= _maxRetry) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        _showErrorSnackbar('স্ট্রিম লোড ব্যর্থ। পরের চ্যানেলে যান।');
-      }
+      setState(() => _isLoading = false);
+      _showErrorSnackbar('স্ট্রিম লোড ব্যর্থ। পরের চ্যানেলে যান।');
       return;
     }
 
     _retryCount++;
-    debugPrint("Auto retry $_retryCount/$_maxRetry...");
+    setState(() => _isLoading = true);
 
-    if (mounted) setState(() => _isLoading = true);
-
-    _retryTimer = Timer(Duration(seconds: _retryCount * 2), () {
+    _retryTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) {
-        setState(() => _activeChannelId = null); // force reinit
+        _activeChannelId = null; 
         _initController();
       }
     });
   }
 
-  void _handleLoadError(String channelName, {bool isTimeout = false}) {
+  void _handleLoadError(String channelName) {
     if (!mounted) return;
-    setState(() {
-      _isLoading = false;
-      _activeChannelId = null;
-    });
-
     if (_retryCount < _maxRetry) {
       _scheduleRetry();
     } else {
-      final msg = isTimeout
-          ? '$channelName: সংযোগ সময় শেষ। পরীক্ষা করুন।'
-          : '$channelName লোড হতে ব্যর্থ হয়েছে।';
-      _showErrorSnackbar(msg);
+      setState(() => _isLoading = false);
+      _showErrorSnackbar('$channelName লোড হতে ব্যর্থ হয়েছে।');
     }
   }
 
@@ -271,21 +240,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 
-  // FIX ৯: Channel switch এ race condition দূর করা হয়েছে
   void _safeChannelSwitch(int direction) {
-    if (_appState == null) return;
-
     _retryTimer?.cancel();
     _retryCount = 0;
 
     setState(() {
       _showControls = true;
       _isLoading = true;
-      _activeChannelId = null;
+      _activeChannelId = null; 
     });
     _startControlsTimer();
 
-    // controller background এ সরাও
     if (_controller != null) {
       final oldCtrl = _controller!;
       final oldListener = _controllerListener;
@@ -294,19 +259,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       _disposeControllerInBackground(oldCtrl, oldListener);
     }
 
-    _appState!.switchChannel(direction);
+    final appState = Provider.of<AppState>(context, listen: false);
+    appState.switchChannel(direction);
 
-    // একটু delay দিয়ে init — state settle করতে
-    Future.microtask(() {
+    Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) _initController();
     });
   }
 
   void _switchToSpecificChannelNumber(int targetNumber) {
-    if (_appState == null) return;
-
-    final allChannels = _appState!.channels;
-    final targetIndex = targetNumber - 1;
+    final appState = Provider.of<AppState>(context, listen: false);
+    final allChannels = appState.channels;
+    final targetIndex = targetNumber - 1; // ডিরেক্ট ইনডেক্সিং (১০ নম্বর চ্যানেল = ইনডেক্স ৯)
 
     if (targetIndex >= 0 && targetIndex < allChannels.length) {
       _retryTimer?.cancel();
@@ -326,9 +290,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _disposeControllerInBackground(oldCtrl, oldListener);
       }
 
-      _appState!.selectChannelByIndex(targetIndex);
+      appState.selectChannelByIndex(targetIndex);
 
-      Future.microtask(() {
+      Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) _initController();
       });
     } else {
@@ -336,18 +300,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
+  // ── 🎯 ফিক্স: রিমোট কি-প্যাড মাল্টিপল ডিজিট (১০ নম্বর) ইনপুট কম্বিনেশন লজিক ──
   void _handleNumberInput(String number) {
-    _numberInputTimer?.cancel();
+    _numberInputTimer?.cancel(); // আগের চলমান টাইমার ক্যানসেল করুন
+    
     setState(() {
       _showControls = true;
-      _typedChannelNumber += number;
+      _typedChannelNumber += number; // নতুন চাপ দেওয়া সংখ্যা আগের সংখ্যার পাশে যুক্ত হবে (যেমন: '1' + '0' = '10')
     });
 
-    _numberInputTimer = Timer(const Duration(milliseconds: 1500), () {
+    // টাইমার ডিলে ১৮০০ মিলি-সেকেন্ড করা হয়েছে যাতে ইউজার রিমোটে ১ চেপে ০ চাপার পর্যাপ্ত সময় পান
+    _numberInputTimer = Timer(const Duration(milliseconds: 1800), () {
       if (mounted && _typedChannelNumber.isNotEmpty) {
         final targetNum = int.tryParse(_typedChannelNumber);
-        if (targetNum != null) _switchToSpecificChannelNumber(targetNum);
-        setState(() => _typedChannelNumber = "");
+        if (targetNum != null) {
+          _switchToSpecificChannelNumber(targetNum);
+        }
+        setState(() => _typedChannelNumber = ""); // ইনপুট বাফার ক্লিয়ার
         _startControlsTimer();
       }
     });
@@ -358,6 +327,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     final keyLabel = event.logicalKey.keyLabel;
 
+    // ০ থেকে ৯ কি-প্যাড বাটন প্রেস ডিটেকশন
     if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
       _handleNumberInput(keyLabel);
       return;
@@ -406,7 +376,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _startControlsTimer();
   }
 
-  // FIX ১০: exitPlayer এ mounted check যোগ করা হয়েছে
   void _exitPlayer() async {
     _controlsTimer?.cancel();
     _numberInputTimer?.cancel();
@@ -420,7 +389,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       await _controller?.pause();
     } catch (_) {}
 
-    if (!mounted) return; // async gap এর পরে mounted check
+    if (!mounted) return;
 
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
@@ -429,8 +398,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // observer unregister
-
+    WidgetsBinding.instance.removeObserver(this);
     _controlsTimer?.cancel();
     _numberInputTimer?.cancel();
     _retryTimer?.cancel();
@@ -444,7 +412,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
     _controller?.dispose();
     _focusNode.dispose();
-
     super.dispose();
   }
 
@@ -458,13 +425,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   @override
   Widget build(BuildContext context) {
-    if (_appState == null) return const Scaffold(backgroundColor: Colors.black);
-
-    final currentChannel = _appState!.currentChannel;
+    final appState = Provider.of<AppState>(context, listen: false);
+    final currentChannel = appState.currentChannel;
+    
     final controller = _controller;
     final initialized = controller != null && controller.value.isInitialized;
-    final isLive = controller?.value.duration == Duration.zero ||
-        controller?.value.duration == null;
+    final isLive = controller?.value.duration == Duration.zero || controller?.value.duration == null;
 
     return KeyboardListener(
       focusNode: _focusNode,
@@ -477,11 +443,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার ──
+              
+              // ভিডিও লেয়ার (BoxFit.cover জুম ফিট)
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
-                    fit: BoxFit.contain, // FIX: fill → contain, aspect ratio ঠিক থাকে
+                    fit: BoxFit.cover, 
                     child: SizedBox(
                       width: controller.value.size.width,
                       height: controller.value.size.height,
@@ -496,17 +463,16 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     children: [
                       const CircularProgressIndicator(color: Colors.white),
                       const SizedBox(height: 16),
-                      // retry count দেখাও
                       if (_retryCount > 0)
                         Text(
                           'পুনরায় চেষ্টা করা হচ্ছে... ($_retryCount/$_maxRetry)',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                     ],
                   ),
                 ),
 
-              // ── ২. টপ বার ──
+              // টপ বার
               if (_showControls)
                 Positioned(
                   left: 0, right: 0, top: 0,
@@ -536,10 +502,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                 const SizedBox(width: 8),
                                 Text(
                                   '${currentChannel.name}  •  ${currentChannel.quality}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -554,7 +517,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ৩. সেন্টার কন্ট্রোলস ──
+              // সেন্টার কন্ট্রোলস
               if (_showControls)
                 Center(
                   child: Row(
@@ -569,16 +532,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                         onTap: _togglePlayPause,
                         child: Container(
                           width: 65, height: 65,
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                          ),
+                          decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                           child: Icon(
-                            initialized && !_isLoading && controller.value.isPlaying
-                                ? Icons.pause
-                                : Icons.play_arrow,
-                            color: Colors.white,
-                            size: 40,
+                            initialized && !_isLoading && controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
+                            color: Colors.white, size: 40,
                           ),
                         ),
                       ),
@@ -591,7 +548,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ৪. বটম কন্ট্রোল বার ──
+              // বটম কন্ট্রোল বার
               if (_showControls && initialized && !_isLoading)
                 Positioned(
                   left: 0, right: 0, bottom: 0,
@@ -609,40 +566,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       child: Row(
                         children: [
                           IconButton(
-                            icon: Icon(
-                              controller.value.isPlaying ? Icons.pause : Icons.play_arrow,
-                              color: Colors.white,
-                            ),
+                            icon: Icon(controller.value.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
                             onPressed: _togglePlayPause,
                           ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             margin: const EdgeInsets.only(right: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
+                            decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
                             child: const Row(
                               children: [
                                 CircleAvatar(radius: 3, backgroundColor: Colors.white),
                                 SizedBox(width: 5),
-                                Text(
-                                  'LIVE',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
+                                Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
                           if (!isLive) ...[
-                            Text(
-                              _formatDuration(controller.value.position),
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
+                            Text(_formatDuration(controller.value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
                             Expanded(
                               child: VideoProgressIndicator(
                                 controller,
@@ -655,10 +595,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                               ),
                             ),
-                            Text(
-                              _formatDuration(controller.value.duration),
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
+                            Text(_formatDuration(controller.value.duration), style: const TextStyle(color: Colors.white, fontSize: 12)),
                           ] else
                             const Expanded(child: SizedBox.shrink()),
                         ],
@@ -667,36 +604,32 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ৫. চ্যানেল সুইচ টোস্ট ──
+              // চ্যানেল সুইচ টোস্ট লেয়ার
               Positioned(
                 left: 24, right: 24,
                 bottom: _showControls ? 70 : 24,
-                child: AnimatedOpacity(
-                  opacity: _appState!.showToast ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.8),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.radar, color: Colors.white),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _appState!.toastMessage,
-                            style: const TextStyle(color: Colors.white),
-                          ),
+                child: Consumer<AppState>(
+                  builder: (context, state, child) {
+                    return AnimatedOpacity(
+                      opacity: state.showToast ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.8), borderRadius: BorderRadius.circular(18)),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.radar, color: Colors.white),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(state.toastMessage, style: const TextStyle(color: Colors.white))),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
               ),
 
-              // ── ৬. নম্বর ইনপুট ওভারলে ──
+              // নম্বর ইনপুট ওভারলে (স্ক্রিনের মাঝে বড় করে টাইপ করা নম্বরটি দেখাবে)
               if (_typedChannelNumber.isNotEmpty)
                 Center(
                   child: Container(
@@ -708,12 +641,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                     ),
                     child: Text(
                       _typedChannelNumber,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 54,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 54, fontWeight: FontWeight.bold, letterSpacing: 2),
                     ),
                   ),
                 ),
