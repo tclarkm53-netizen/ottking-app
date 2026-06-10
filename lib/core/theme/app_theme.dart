@@ -1,68 +1,50 @@
 // lib/core/theme/app_theme.dart
+// Professional Smart TV Dark Theme — no mobile-specific sizing
 
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  const AppTheme._();
+  AppTheme._();
 
-  static const Color backgroundDark = Color(0xFF090B16);
-  static const Color backgroundLight = Color(0xFFF4F6FB);
-  static const Color surfaceDark = Color(0xFF11152A);
-  static const Color surfaceLight = Color(0xFFFFFFFF);
-  static const Color accent = Color(0xFF8B5CF6);
-  static const Color accentCyan = Color(0xFF22D3EE);
-  static const Color success = Color(0xFF34D399);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFF87171);
+  // Brand palette
+  static const Color primary   = Color(0xFF06B6D4); // cyan
+  static const Color accent    = Color(0xFFEF4444); // red (LIVE badge)
+  static const Color gold      = Color(0xFFEAB308); // premium badge
+  static const Color surface   = Color(0xFF0F172A); // deep navy
+  static const Color card      = Color(0xFF1E293B); // card bg
+  static const Color cardLight = Color(0xFF334155); // focused card
+  static const Color border    = Color(0xFF334155);
 
-  static ThemeData darkTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.dark,
-    scaffoldBackgroundColor: backgroundDark,
-    colorScheme: const ColorScheme.dark(
-      primary: accent,
-      secondary: accentCyan,
-      surface: surfaceDark,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: Colors.white10,
-    ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      foregroundColor: Colors.white,
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: surfaceDark,
-      labelStyle: const TextStyle(color: Colors.white70),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  );
-
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    brightness: Brightness.light,
-    scaffoldBackgroundColor: backgroundLight,
-    colorScheme: const ColorScheme.light(
-      primary: accent,
-      secondary: Color(0xFF0F172A),
-      surface: surfaceLight,
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      filled: true,
-      fillColor: Colors.black.withAlpha(13),
-    ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      foregroundColor: Color(0xFF0F172A),
-    ),
-    chipTheme: ChipThemeData(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ),
-  );
+  static ThemeData get darkTheme => ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: surface,
+        colorScheme: const ColorScheme.dark(
+          primary: primary,
+          secondary: accent,
+          surface: surface,
+          error: Color(0xFFEF4444),
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: surface,
+          elevation: 0,
+          centerTitle: false,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 26,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+          ),
+          iconTheme: IconThemeData(color: Colors.white),
+        ),
+        textTheme: const TextTheme(
+          displayLarge:   TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+          headlineLarge:  TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          headlineMedium: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          bodyLarge:      TextStyle(color: Colors.white70),
+          bodyMedium:     TextStyle(color: Colors.white60),
+          bodySmall:      TextStyle(color: Colors.white38),
+        ),
+        focusColor: primary,
+        useMaterial3: true,
+      );
 }
