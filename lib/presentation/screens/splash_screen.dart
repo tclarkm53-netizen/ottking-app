@@ -1,10 +1,12 @@
 // lib/presentation/screens/splash_screen.dart
+// TV-only landscape splash. Boots to player if enabled & has channels.
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -16,141 +18,251 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  late final AnimationController _pulse;
+  bool _isLoading = true;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
 
-    // সম্পূর্ণ ফুল স্ক্রিন — কোনো সিস্টেম UI নেই
+    // Force landscape on every screen
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-    _controller = AnimationController(
+    _pulse = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    Future.delayed(AppConstants.splashDuration, _navigate);
+    _boot();
   }
 
-  Future<void> _navigate() async {
+  Future<void> _boot() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final appState = context.read<AppState>();
+    final start = DateTime.now();
+
+    try {
+      await appState.bootstrap();
+
+      final elapsed = DateTime.now().difference(start);
+      final remaining = AppConstants.splashDuration - elapsed;
+      if (remaining > Duration.zero) await Future.delayed(remaining);
+
+      _navigate();
+    } catch (e) {
+      debugPrint('Splash error: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'নেটওয়ার্ক বা সার্ভারে সমস্যা হচ্ছে। আবার চেষ্টা করুন।';
+        });
+      }
+    }
+  }
+
+  void _navigate() {
     if (!mounted) return;
     final appState = context.read<AppState>();
 
-    // Bootstrap এখনো শেষ না হলে অপেক্ষা করো
-    if (appState.isLoading) {
-      await Future.doWhile(() async {
-        await Future.delayed(const Duration(milliseconds: 100));
-        return appState.isLoading;
-      });
+    if (appState.shouldBootToPlayer() && appState.channels.isNotEmpty) {
+      // Boot directly to last-played channel (already restored in loadCatalog)
+      Navigator.pushNamedAndRemoveUntil(
+          context, '/player', (route) => false);
+    } else {
+      Navigator.pushNamedAndRemoveUntil(
+          context, '/home', (route) => false);
     }
-
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(
-      context,
-      appState.shouldBootToPlayer() ? '/player' : '/home',
-    );
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final size = MediaQuery.of(context).size;
-    final w = size.width;
-    final h = size.height;
-
-    // স্ক্রিন সাইজ অনুযায়ী adaptive scaling
-    // ছোট ফোন থেকে বড় TV পর্যন্ত সব কিছু proportionally fit থাকবে
-    final double baseUnit = (w * 0.12).clamp(48.0, 120.0);
-    final double logoSize = baseUnit;
-    final double iconSize = (logoSize * 0.45).clamp(24.0, 52.0);
-    final double titleSize = (w * 0.045).clamp(18.0, 42.0);
-    final double taglineSize = (w * 0.022).clamp(12.0, 20.0);
-    final double spacing = (h * 0.03).clamp(12.0, 28.0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      // SafeArea বাদ — immersiveSticky তে সম্পূর্ণ স্ক্রিন নেওয়া হবে
-      body: SizedBox.expand(
-        child: DecoratedBox(
+      backgroundColor: AppTheme.surface,
+      body: SafeArea(
+        child: Container(
+          width: double.infinity,
+          height: double.infinity,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
+            gradient: RadialGradient(
+              center: const Alignment(0, -0.3),
+              radius: 1.2,
               colors: [
-                theme.colorScheme.primary.withOpacity(0.08),
-                const Color(0xFF0F172A),
+                AppTheme.primary.withOpacity(0.08),
+                AppTheme.surface,
               ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
             ),
           ),
-          child: Center(
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (_, __) => Transform.scale(
-                scale: 0.95 + (_controller.value * 0.06),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // লোগো সার্কেল
-                    Container(
-                      width: logoSize,
-                      height: logoSize,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.primary.withAlpha(26),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: theme.colorScheme.primary,
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: theme.colorScheme.primary.withAlpha(60),
-                            blurRadius: 30,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.live_tv_rounded,
-                        size: iconSize,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-
-                    SizedBox(height: spacing),
-
-                    // অ্যাপের নাম
-                    Text(
-                      AppConstants.appName,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: titleSize,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-
-                    SizedBox(height: spacing * 0.4),
-
-                    // ট্যাগলাইন
-                    Text(
-                      AppConstants.appTagline,
-                      style: TextStyle(
-                        color: Colors.white60,
-                        fontSize: taglineSize,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
+          child: Row(
+            children: [
+              // Left decorative bar
+              Container(
+                width: 6,
+                height: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppTheme.primary.withOpacity(0.0),
+                      AppTheme.primary,
+                      AppTheme.primary.withOpacity(0.0),
+                    ],
+                  ),
                 ),
               ),
-            ),
+              // Center content
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      child: AnimatedBuilder(
+                        animation: _pulse,
+                        builder: (context, child) => Transform.scale(
+                          scale: _isLoading ? 0.96 + _pulse.value * 0.04 : 1.0,
+                          child: child,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Logo ring
+                            Container(
+                              width: 110,
+                              height: 110,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppTheme.primary.withOpacity(0.08),
+                                border: Border.all(
+                                  color: _isLoading
+                                      ? AppTheme.primary
+                                      : Colors.redAccent,
+                                  width: 2.5,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_isLoading
+                                            ? AppTheme.primary
+                                            : Colors.redAccent)
+                                        .withOpacity(0.3),
+                                    blurRadius: 30,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                _isLoading
+                                    ? Icons.live_tv_rounded
+                                    : Icons.wifi_off_rounded,
+                                size: 48,
+                                color: _isLoading ? AppTheme.primary : Colors.redAccent,
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+      
+                            // App name
+                            Text(
+                              AppConstants.appName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 42,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 4,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+      
+                            const SizedBox(height: 6),
+                            Text(
+                              AppConstants.appTagline,
+                              style: TextStyle(
+                                color: AppTheme.primary.withOpacity(0.8),
+                                fontSize: 14,
+                                letterSpacing: 1.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+      
+                            const SizedBox(height: 36),
+      
+                            if (_isLoading) ...[
+                              SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 3,
+                                  valueColor: AlwaysStoppedAnimation(AppTheme.primary),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'চ্যানেল লোড হচ্ছে...',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ] else if (_errorMessage != null) ...[
+                              ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: size.width * 0.6),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Text(
+                                    _errorMessage!,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Colors.white60,
+                                      fontSize: 15,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              ElevatedButton.icon(
+                                autofocus: true, // রিমোটের ফোকাস অটোমেটিক বাটনে চলে আসবে
+                                onPressed: _boot,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primary,
+                                  foregroundColor: Colors.black, // টেক্সট কালার আরও ক্লিয়ার করা হলো
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 36, vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8)),
+                                  textStyle: const TextStyle(
+                                      fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
+                                icon: const Icon(Icons.refresh_rounded, size: 20),
+                                label: const Text('আবার চেষ্টা করুন'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
