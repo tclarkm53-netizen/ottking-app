@@ -1,10 +1,12 @@
 // lib/presentation/screens/splash_screen.dart
-// ✅ FIXED & INSTANT STREAMLINED VERSION WITH BOOT INTEGRATION
+// TV-only landscape splash. Boots to player if enabled & has channels.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -16,61 +18,52 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  
-  // এরর হ্যান্ডেলিং স্টেট ভেরিয়েবল
+  late final AnimationController _pulse;
   bool _isLoading = true;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+
+    // Force landscape on every screen
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+    _pulse = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    // প্রথমবার অ্যাপ ওপেনেই ডাটা ফেচ ও ডিভাইস মোড ডিটেক্ট করার চেষ্টা করবে
-    _initializeApp();
+    _boot();
   }
 
-  Future<void> _initializeApp() async {
+  Future<void> _boot() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null; // প্রতিবার রিট্রাই করার সময় এরর রিসেট হবে
+      _errorMessage = null;
     });
 
     final appState = context.read<AppState>();
-    final startTime = DateTime.now();
+    final start = DateTime.now();
 
     try {
-      if (!mounted) return;
-      
-      // ── 📺 ১. প্রথমে ডিভাইস স্মার্ট টিভি কিনা তা ডিটেক্ট করা হচ্ছে ──────────────────
-      await appState.updateDeviceMode(context);
+      await appState.bootstrap();
 
-      // ── 🔄 ২. সার্ভার থেকে ডাটা ও ইউজার সেশন বুটস্ট্র্যাপ করা হচ্ছে ──────────────────
-      await appState.bootstrap(); 
-      
-      // ডাটা ফেচ করতে কত সময় লাগলো তার হিসাব
-      final elapsedTime = DateTime.now().difference(startTime);
-      
-      // মিনিমাম স্প্লাশ ডিউরেশন মেইনটেইন করা
-      if (elapsedTime < AppConstants.splashDuration) {
-        final remainingTime = AppConstants.splashDuration - elapsedTime;
-        await Future.delayed(remainingTime);
-      }
+      final elapsed = DateTime.now().difference(start);
+      final remaining = AppConstants.splashDuration - elapsed;
+      if (remaining > Duration.zero) await Future.delayed(remaining);
 
-      // ডাটা সফলভাবে মেমোরিতে আসলে রুট অনুযায়ী নেভিগেট করবে
       _navigate();
-
     } catch (e) {
-      // নেটওয়ার্ক বা সার্ভার এরর ক্যাচ করা
-      debugPrint("Splash Bootstrap Error: $e");
+      debugPrint('Splash error: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = "নেটওয়ার্ক কানেকশন অথবা সার্ভারে সমস্যা হচ্ছে। অনুগ্রহ করে আবার চেষ্টা করুন।";
+          _errorMessage = 'নেটওয়ার্ক বা সার্ভারে সমস্যা হচ্ছে। আবার চেষ্টা করুন।';
         });
       }
     }
@@ -80,163 +73,180 @@ class _SplashScreenState extends State<SplashScreen>
     if (!mounted) return;
     final appState = context.read<AppState>();
 
-    // ফিক্সড কন্ডিশন: shouldBootToPlayer() এখন সঠিকভাবে ইভ্যালুয়েট হবে কারণ মোড সেট করা হয়েছে
     if (appState.shouldBootToPlayer() && appState.channels.isNotEmpty) {
-      // ওটিটিকে বা লাইভ প্রিভিউ শুরু করার জন্য প্রথম চ্যানেল অটো-সিলেক্ট করে নেওয়া হচ্ছে
-      appState.selectChannelByIndex(0); 
-      
-      // টিভি মেমোরি ক্লিন রাখতে প্রিভিয়াস রুট সম্পূর্ণ রিমুভ করে প্লেয়ারে পুশ করা হচ্ছে
-      Navigator.pushNamedAndRemoveUntil(context, '/player', (route) => false);
+      // Boot directly to last-played channel (already restored in loadCatalog)
+      Navigator.pushNamedAndRemoveUntil(
+          context, '/player', (route) => false);
     } else {
-      // বুট প্লেয়ার অফ থাকলে অথবা চ্যানেল খালি থাকলে রেগুলার হোম পেজে যাবে
-      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      Navigator.pushNamedAndRemoveUntil(
+          context, '/home', (route) => false);
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pulse.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    // স্মার্ট টিভি এবং ল্যান্ডস্কেপ মোড ডিটেকশন (AppState গ্লোবাল চেকের সাথে সামঞ্জস্যপূর্ণ)
-    final isTV = MediaQuery.of(context).size.width > 800 && 
-                 MediaQuery.of(context).orientation == Orientation.landscape;
-
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A), 
+      backgroundColor: AppTheme.surface,
       body: Container(
         width: double.infinity,
         height: double.infinity,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
+          gradient: RadialGradient(
+            center: const Alignment(0, -0.3),
+            radius: 1.2,
             colors: [
-              theme.colorScheme.primary.withOpacity(0.1),
-              const Color(0xFF0F172A),
+              AppTheme.primary.withOpacity(0.08),
+              AppTheme.surface,
             ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
           ),
         ),
-        child: Center(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Transform.scale(
-                scale: _isLoading ? (0.95 + (_controller.value * 0.06)) : 1.0,
-                child: child,
-              );
-            },
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ── লোগো এরিয়া ──
-                  Container(
-                    width: isTV ? 130 : 96,
-                    height: isTV ? 130 : 96,
-                    decoration: BoxDecoration(
-                      color: _isLoading 
-                          ? theme.colorScheme.primary.withAlpha(26)
-                          : Colors.red.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: _isLoading ? theme.colorScheme.primary : Colors.redAccent,
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _isLoading 
-                              ? theme.colorScheme.primary.withAlpha(60)
-                              : Colors.redAccent.withOpacity(0.3),
-                          blurRadius: 30,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      _isLoading ? Icons.live_tv_rounded : Icons.wifi_off_rounded,
-                      size: isTV ? 54 : 44,
-                      color: _isLoading ? theme.colorScheme.primary : Colors.redAccent,
-                    ),
-                  ),
-                  SizedBox(height: isTV ? 28 : 24),
-                  
-                  Text(
-                    AppConstants.appName,
-                    style: (isTV ? theme.textTheme.headlineLarge : theme.textTheme.headlineMedium)?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  
-                  // ── ডাইনামিক উইজেট (লোডিং বনাম এরর স্টেট) ──
-                  if (_isLoading) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      AppConstants.appTagline,
-                      style: (isTV ? theme.textTheme.titleMedium : theme.textTheme.bodyMedium)?.copyWith(
-                        color: Colors.white60,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    SizedBox(
-                      width: isTV ? 28 : 22,
-                      height: isTV ? 28 : 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
-                      ),
-                    ),
-                  ] else if (_errorMessage != null) ...[
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Text(
-                        _errorMessage!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.grey.shade400,
-                          fontSize: isTV ? 16 : 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: _initializeApp,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: isTV ? 32 : 24,
-                          vertical: isTV ? 16 : 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 5,
-                      ),
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: Text(
-                        "আবার চেষ্টা করুন",
-                        style: TextStyle(
-                          fontSize: isTV ? 16 : 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
+        child: Row(
+          children: [
+            // Left decorative bar
+            Container(
+              width: 6,
+              height: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppTheme.primary.withOpacity(0.0),
+                    AppTheme.primary,
+                    AppTheme.primary.withOpacity(0.0),
                   ],
-                ],
+                ),
               ),
             ),
-          ),
+            // Center content
+            Expanded(
+              child: Center(
+                child: AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, child) => Transform.scale(
+                    scale: _isLoading ? 0.96 + _pulse.value * 0.04 : 1.0,
+                    child: child,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Logo ring
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppTheme.primary.withOpacity(0.08),
+                          border: Border.all(
+                            color: _isLoading
+                                ? AppTheme.primary
+                                : Colors.redAccent,
+                            width: 2.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isLoading
+                                      ? AppTheme.primary
+                                      : Colors.redAccent)
+                                  .withOpacity(0.4),
+                              blurRadius: 40,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _isLoading
+                              ? Icons.live_tv_rounded
+                              : Icons.wifi_off_rounded,
+                          size: 52,
+                          color: _isLoading ? AppTheme.primary : Colors.redAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
+                      // App name
+                      Text(
+                        AppConstants.appName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 48,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 4,
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+                      Text(
+                        AppConstants.appTagline,
+                        style: TextStyle(
+                          color: AppTheme.primary.withOpacity(0.8),
+                          fontSize: 16,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+
+                      const SizedBox(height: 48),
+
+                      if (_isLoading) ...[
+                        SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            valueColor: AlwaysStoppedAnimation(AppTheme.primary),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'চ্যানেল লোড হচ্ছে...',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.5),
+                            fontSize: 14,
+                          ),
+                        ),
+                      ] else if (_errorMessage != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 80),
+                          child: Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 16,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        ElevatedButton.icon(
+                          onPressed: _boot,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 18),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            textStyle: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('আবার চেষ্টা করুন'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
