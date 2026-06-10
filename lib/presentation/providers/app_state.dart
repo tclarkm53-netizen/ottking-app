@@ -1,7 +1,6 @@
 // lib/presentation/providers/app_state.dart
 
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -118,12 +117,20 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Smart TV boot ─────────────────────────────────────────────────────────
+  // ── Smart TV boot & Player Screen compatibility ───────────────────────────
 
   Future<void> setBootToPlayer(bool enabled) async {
     bootToPlayer = enabled;
     await prefs.setBool('bootToPlayer', enabled);
     notifyListeners();
+  }
+
+  // Player Screen-এ ব্যবহৃত গেটার ম্যাপিং
+  bool get isPlayerBootEnabled => bootToPlayer;
+
+  // Player Screen-এর সেটিংস ডায়ালগ থেকে কল করা টগল ফাংশন
+  void togglePlayerBoot() {
+    setBootToPlayer(!bootToPlayer);
   }
 
   bool shouldBootToPlayer() =>
@@ -138,7 +145,7 @@ class AppState extends ChangeNotifier {
       final res = await repository.authenticate(email, password);
       await _handleAuthResponse(res, email);
       
-      // ফিক্স ১: লগইন সফল হওয়ার পর তৎক্ষণাৎ নতুন প্রিমিয়াম ক্যাটালগ লোড করা হলো
+      // লগইন সফল হওয়ার পর তৎক্ষণাৎ নতুন প্রিমিয়াম ক্যাটালগ লোড করা হলো
       await loadCatalog(); 
     } catch (e) {
       errorMessage = e.toString();
@@ -153,7 +160,7 @@ class AppState extends ChangeNotifier {
       final res = await repository.register(email, password);
       await _handleAuthResponse(res, email);
       
-      // ফিক্স ২: রেজিস্ট্রেশন সফল হওয়ার পর তৎক্ষণাৎ নতুন ক্যাটালগ লোড করা হলো
+      // রেজিস্ট্রেশন সফল হওয়ার পর তৎক্ষণাৎ নতুন ক্যাটালগ লোড করা হলো
       await loadCatalog();
     } catch (e) {
       errorMessage = e.toString();
@@ -182,7 +189,7 @@ class AppState extends ChangeNotifier {
     isAuthenticated = false;
     userProfile = null;
     
-    // ফিক্স ৩: লগআউট করার পর প্রিমিয়াম চ্যানেলগুলো সরিয়ে আবার নরমাল ফ্রি ক্যাটালগ লোড করা হলো
+    // লগআউট করার পর প্রিমিয়াম চ্যানেলগুলো সরিয়ে আবার নরমাল ফ্রি ক্যাটালগ লোড করা হলো
     _currentChannelIndex = 0;
     await loadCatalog(); 
     
@@ -233,7 +240,7 @@ class AppState extends ChangeNotifier {
     logoUrl: '',
     description: 'Secure preview channel',
     quality: 'HD',
-    isPremium: 0, // ফিক্স ৪: মডেল আপডেটের সাথে সামঞ্জস্য রাখা হলো
+    isPremium: 0, 
   );
 
   ChannelModel get currentChannel =>
