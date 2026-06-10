@@ -1,4 +1,4 @@
-name: 2.Flutter Android CI build
+name: 2. Flutter Android CI build
 
 on:
   workflow_dispatch:
@@ -11,7 +11,6 @@ jobs:
       API_BASE_URL: ${{ secrets.API_BASE_URL }}
       HMAC_SECRET_KEY: ${{ secrets.HMAC_SECRET_KEY }}
       ENCRYPTION_KEY: ${{ secrets.HMAC_SECRET_KEY }}
-      # সরাসরি YAML-এই পাসওয়ার্ড এবং ডিটেইলস ফিক্সড করে দেওয়া হলো
       KEYSTORE_PASSWORD: "ottking_secure_pass_2026"
       KEY_ALIAS: "ottking_alias"
       KEY_PASSWORD: "ottking_secure_pass_2026"
@@ -63,13 +62,9 @@ jobs:
             exit 1
           fi
 
-      # ── 🎯 ফিক্সড সেকশন: একই কি জোড় তৈরি করার মেকানিজম (Deterministic Key) ──
       - name: Prepare Android signing (Static Fixed Key)
         run: |
           set -e
-          
-          # প্রতিবার একই সিগনেচার কি নিশ্চিত করতে নির্দিষ্ট RSA 'date' এবং 'seed' এর উপর বেস করে তৈরি করা হচ্ছে
-          # এর ফলে যতবারই এই স্টেপ রান হবে, আউটপুট সিগনেচার SHA-256 ১00% সেম থাকবে।
           keytool -genkeypair \
             -v \
             -keystore android/app/upload-keystore.jks \
@@ -81,7 +76,6 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -dname "$KEY_DN"
 
-          # অ্যান্ড্রয়েড গ্রেডলের জন্য কি প্রোপার্টিজ ফাইল রাইট করা
           cat > android/app/key.properties <<EOF
           storeFile=upload-keystore.jks
           storePassword=$KEYSTORE_PASSWORD
@@ -95,18 +89,13 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
+      # ── 🎯 ফিক্সড সেকশন: ক্লিন লগ মোড (শুধু আসল এরর দেখাবে) ──
       - name: Build Android APK
         run: |
+          # --verbose রিমুভ করা হয়েছে যাতে ফালতু লগ না আসে
           flutter build apk --release \
             --split-per-abi \
             --android-skip-build-dependency-validation \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" \
-            --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY" \
-            --verbose
-
-      - name: Upload Android APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ottking-app-release-apk
-          path: build/app/outputs/flutter-apk/*-release.apk
+            --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
