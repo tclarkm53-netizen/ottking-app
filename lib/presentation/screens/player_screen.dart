@@ -1,8 +1,11 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ TV-only landscape player
-// ✅ Channel switch ALWAYS works — even when stream is offline/error
-// ✅ Boot player remembers last channel (restored via AppState)
-// ✅ Settings dialog has Boot Player toggle
+// ✅ Channel name + number shown ONLY at top-left
+// ✅ Number key input shown at top-left (same position)
+// ✅ Bottom bar: only play/pause + LIVE badge + CH counter (no seek, no hints)
+// ✅ Channel list: full remote control (up/down/ok/back)
+// ✅ Settings dialog: full remote control (up/down/ok/back)
+// ✅ Boot player mode: exit confirmation dialog
+// ✅ Back/Left key: only hides channel list if open; otherwise exit confirm
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -31,7 +34,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   bool _showControls = true;
   bool _isLoading = false;
-  bool _hasStreamError = false; // stream has fatal error but we still show UI
+  bool _hasStreamError = false;
 
   AppState? _appState;
 
@@ -40,14 +43,19 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _retryTimer;
 
   String _typed = '';
+  // _typedDisplayName: shown at top-left while typing channel number
+  String _typedDisplayName = '';
   int _retryCount = 0;
   static const int _maxRetry = 3;
 
   DateTime? _okDown;
   bool _longHandled = false;
 
-  // Channel side-panel
   bool _showChannelList = false;
+  int _channelListFocusIndex = 0; // focused item inside channel list
+
+  // Settings dialog focus tracking
+  bool _settingsOpen = false;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -72,6 +80,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _appState = Provider.of<AppState>(context, listen: false);
+        _channelListFocusIndex = _appState!.currentChannelIndex;
         _initController();
         _startControlsTimer();
       }
@@ -103,7 +112,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void _startControlsTimer() {
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && _showControls && _typed.isEmpty) {
+      if (mounted && _showControls && _typed.isEmpty && !_showChannelList) {
         setState(() => _showControls = false);
       }
     });
@@ -132,7 +141,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!mounted || _appState == null) return;
     final channel = _appState!.currentChannel;
 
-    // Already playing this channel and no error — skip
     if (_activeChannelId == channel.id &&
         _ctrl != null &&
         _ctrl!.value.isInitialized &&
@@ -144,7 +152,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       _activeChannelId = channel.id;
     });
 
-    // Dispose old
     if (_ctrl != null) {
       final old = _ctrl!;
       final oldL = _ctrlListener;
@@ -211,15 +218,14 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _hasStreamError = true; // show error overlay but DON'T block switching
+          _hasStreamError = true;
         });
       }
       return;
     }
     _retryCount++;
     if (mounted) setState(() => _isLoading = true);
-    _retryTimer =
-        Timer(Duration(seconds: _retryCount * 2), () {
+    _retryTimer = Timer(Duration(seconds: _retryCount * 2), () {
       if (mounted) {
         setState(() => _activeChannelId = null);
         _initController();
@@ -239,17 +245,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  // ── Channel switching — ALWAYS works regardless of stream error ───────────
+  // ── Channel switching ─────────────────────────────────────────────────────
 
-  /// Core switch — always resets error state and loads new channel.
   void _switchChannel(int direction) {
     if (_appState == null) return;
-
-    // Cancel retries and reset error state immediately
     _retryTimer?.cancel();
     _retryCount = 0;
 
-    // Dispose current controller right away
     if (_ctrl != null) {
       final old = _ctrl!;
       final oldL = _ctrlListener;
@@ -267,6 +269,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _startControlsTimer();
 
     _appState!.switchChannel(direction);
+    _channelListFocusIndex = _appState!.currentChannelIndex;
 
     Future.microtask(() {
       if (mounted) _initController();
@@ -300,6 +303,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
 
     _appState!.selectChannelByIndex(index);
+    _channelListFocusIndex = index;
+
     Future.microtask(() {
       if (mounted) _initController();
     });
@@ -309,109 +314,131 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _handleNumberInput(String digit) {
     _numberTimer?.cancel();
+    final newTyped = _typed + digit;
+    final n = int.tryParse(newTyped);
+    String displayName = 'চ্যানেল $newTyped';
+    if (n != null &&
+        _appState != null &&
+        n - 1 >= 0 &&
+        n - 1 < _appState!.channels.length) {
+      displayName = '${n} · ${_appState!.channels[n - 1].name}';
+    }
+
     setState(() {
       _showControls = true;
-      _typed += digit;
+      _typed = newTyped;
+      _typedDisplayName = displayName;
     });
+
     _numberTimer = Timer(const Duration(milliseconds: 1500), () {
       if (mounted && _typed.isNotEmpty) {
-        final n = int.tryParse(_typed);
-        if (n != null) _switchToIndex(n - 1);
-        setState(() => _typed = '');
+        final idx = int.tryParse(_typed);
+        if (idx != null) _switchToIndex(idx - 1);
+        setState(() {
+          _typed = '';
+          _typedDisplayName = '';
+        });
         _startControlsTimer();
       }
     });
   }
 
-  // ── Settings dialog ───────────────────────────────────────────────────────
+  // ── Exit with confirmation ────────────────────────────────────────────────
+
+  Future<void> _exit() async {
+    if (_appState?.isPlayerBootEnabled == true) {
+      // Boot player mode: show confirmation
+      _controlsTimer?.cancel();
+      final confirm = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _ExitConfirmDialog(),
+      );
+      if (confirm != true) {
+        _startControlsTimer();
+        return;
+      }
+    }
+    _doExit();
+  }
+
+  Future<void> _doExit() async {
+    _controlsTimer?.cancel();
+    _numberTimer?.cancel();
+    _retryTimer?.cancel();
+    try { await WakelockPlus.disable(); } catch (_) {}
+    try { await _ctrl?.pause(); } catch (_) {}
+    if (!mounted) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    Navigator.pushReplacementNamed(context, '/home');
+  }
+
+  // ── Settings dialog with focus ────────────────────────────────────────────
 
   void _openSettings() {
     _controlsTimer?.cancel();
+    _settingsOpen = true;
+
     showDialog(
       context: context,
-      builder: (_) => Consumer<AppState>(
-        builder: (ctx, state, __) => AlertDialog(
-          backgroundColor: Colors.black.withOpacity(0.95),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: AppTheme.primary, width: 1.5),
-          ),
-          title: const Row(
-            children: [
-              Icon(Icons.settings, color: Colors.white),
-              SizedBox(width: 10),
-              Text('প্লেয়ার সেটিংস',
-                  style: TextStyle(color: Colors.white)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                title: const Text('Boot Player (অটো প্লেয়ার)',
-                    style: TextStyle(color: Colors.white)),
-                subtitle: Text(
-                  'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
-                  style: TextStyle(
-                      color: Colors.white.withOpacity(0.55),
-                      fontSize: 12),
-                ),
-                activeColor: AppTheme.primary,
-                value: state.isPlayerBootEnabled,
-                onChanged: (v) => state.togglePlayerBoot(),
-              ),
-              if (state.isAuthenticated)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: ListTile(
-                    leading: const Icon(Icons.stars_rounded,
-                        color: Color(0xFFEAB308)),
-                    title: Text(
-                      state.userProfile?.email ?? '',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      'প্ল্যান: ${state.userProfile?.plan ?? ''}',
-                      style: const TextStyle(
-                          color: Colors.white54, fontSize: 12),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.pushNamed(context, '/settings');
-              },
-              child: const Text('সেটিংস',
-                  style: TextStyle(color: Colors.white54)),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('বন্ধ',
-                  style: TextStyle(color: AppTheme.primary)),
-            ),
-          ],
-        ),
-      ),
-    ).then((_) => _startControlsTimer());
+      builder: (_) => _SettingsDialog(appState: _appState!),
+    ).then((_) {
+      _settingsOpen = false;
+      _startControlsTimer();
+      // Re-grab focus
+      if (mounted) _focus.requestFocus();
+    });
   }
 
   // ── Key handler ───────────────────────────────────────────────────────────
 
   void _handleKey(KeyEvent event) {
+    // If settings dialog is open, let Flutter handle it naturally
+    if (_settingsOpen) return;
+
     final label = event.logicalKey.keyLabel;
 
     if (event is KeyDownEvent) {
+      // ── Channel list is open: route keys into the list ──────────────────
+      if (_showChannelList) {
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() {
+            if (_channelListFocusIndex > 0) _channelListFocusIndex--;
+          });
+          return;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() {
+            final max = (_appState?.channels.length ?? 1) - 1;
+            if (_channelListFocusIndex < max) _channelListFocusIndex++;
+          });
+          return;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.select) {
+          setState(() => _showChannelList = false);
+          _switchToIndex(_channelListFocusIndex);
+          return;
+        }
+        // Back/Left → hide channel list
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.escape ||
+            event.logicalKey == LogicalKeyboardKey.goBack) {
+          setState(() => _showChannelList = false);
+          return;
+        }
+        return; // swallow all other keys while list is open
+      }
+
+      // ── Normal player key handling ───────────────────────────────────────
+
       // Number input
       if (RegExp(r'^[0-9]$').hasMatch(label)) {
         _handleNumberInput(label);
         return;
       }
 
-      // Channel switch — Up/Down; also Page Up/Down as alternates
+      // Channel switch Up/Down
       if (event.logicalKey == LogicalKeyboardKey.arrowUp ||
           event.logicalKey == LogicalKeyboardKey.pageUp) {
         _switchChannel(-1);
@@ -423,7 +450,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         return;
       }
 
-      // OK / Select long-press for settings
+      // OK long-press tracking
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -439,20 +466,27 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _startControlsTimer();
 
-      // Back → exit to home
+      // Back / Left → exit (no channel list open)
       if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
           event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.goBack) {
         _exit();
+        return;
       }
 
-      // Right → channel list panel
+      // Right → open channel list panel
       if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-        setState(() => _showChannelList = !_showChannelList);
+        setState(() {
+          _showChannelList = true;
+          _channelListFocusIndex = _appState?.currentChannelIndex ?? 0;
+        });
+        return;
       }
     }
 
     if (event is KeyUpEvent) {
+      if (_showChannelList) return;
+
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -481,17 +515,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
     _wakelock();
     _startControlsTimer();
-  }
-
-  Future<void> _exit() async {
-    _controlsTimer?.cancel();
-    _numberTimer?.cancel();
-    _retryTimer?.cancel();
-    try { await WakelockPlus.disable(); } catch (_) {}
-    try { await _ctrl?.pause(); } catch (_) {}
-    if (!mounted) return;
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    Navigator.pushReplacementNamed(context, '/home');
   }
 
   void _showSnack(String msg) {
@@ -530,8 +553,12 @@ class _PlayerScreenState extends State<PlayerScreen>
     final ch = _appState!.currentChannel;
     final initialized =
         _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
-    final isLive = _ctrl?.value.duration == Duration.zero ||
-        _ctrl?.value.duration == null;
+
+    // What to show at the top-left channel info area:
+    // If user is typing a channel number, show typed display; otherwise normal channel info
+    final bool isTyping = _typed.isNotEmpty;
+    final int chNumber = _appState!.currentChannelIndex + 1;
+    final int total = _appState!.channels.length;
 
     return KeyboardListener(
       focusNode: _focus,
@@ -579,15 +606,19 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
 
               // ── Top bar ────────────────────────────────────────────────────
-              if (_showControls)
+              if (_showControls || isTyping)
                 Positioned(
                   top: 0, left: 0, right: 0,
                   child: _TopOverlay(
                     channel: ch,
+                    channelNumber: chNumber,
+                    totalChannels: total,
                     isAuthenticated: _appState!.isAuthenticated,
                     userPlan: _appState?.userProfile?.plan,
                     onSettings: _openSettings,
                     onExit: _exit,
+                    // Pass typed display to top-left when typing
+                    typedDisplay: isTyping ? _typedDisplayName : null,
                   ),
                 ),
 
@@ -597,7 +628,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                   bottom: 0, left: 0, right: 0,
                   child: _BottomOverlay(
                     ctrl: _ctrl!,
-                    isLive: isLive,
                     onPlayPause: _togglePlayPause,
                     channelIndex: _appState!.currentChannelIndex,
                     totalChannels: _appState!.channels.length,
@@ -605,47 +635,30 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ),
 
               // ── Channel toast ──────────────────────────────────────────────
-              Positioned(
-                left: 24, right: 24,
-                bottom: _showControls ? 80 : 24,
-                child: AnimatedOpacity(
-                  opacity: _appState!.showToast ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: _ChannelToast(message: _appState!.toastMessage),
-                ),
-              ),
-
-              // ── Number input overlay ───────────────────────────────────────
-              if (_typed.isNotEmpty)
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 40, vertical: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                          color: AppTheme.primary, width: 2.5),
-                    ),
-                    child: Text(
-                      _typed,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 64,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 4,
-                      ),
-                    ),
+              if (!isTyping)
+                Positioned(
+                  left: 24, right: 24,
+                  bottom: _showControls ? 80 : 24,
+                  child: AnimatedOpacity(
+                    opacity: _appState!.showToast ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: _ChannelToast(message: _appState!.toastMessage),
                   ),
                 ),
 
               // ── Channel list side panel ────────────────────────────────────
-              if (_showChannelList)
-                Positioned(
+              AnimatedSlide(
+                offset: _showChannelList
+                    ? Offset.zero
+                    : const Offset(1.0, 0.0),
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                child: Positioned(
                   right: 0, top: 0, bottom: 0,
                   child: _ChannelSidePanel(
                     channels: _appState!.channels,
                     currentIndex: _appState!.currentChannelIndex,
+                    focusedIndex: _channelListFocusIndex,
                     onSelect: (i) {
                       setState(() => _showChannelList = false);
                       _switchToIndex(i);
@@ -654,10 +667,267 @@ class _PlayerScreenState extends State<PlayerScreen>
                         setState(() => _showChannelList = false),
                   ),
                 ),
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─── Exit Confirmation Dialog ─────────────────────────────────────────────────
+
+class _ExitConfirmDialog extends StatefulWidget {
+  @override
+  State<_ExitConfirmDialog> createState() => _ExitConfirmDialogState();
+}
+
+class _ExitConfirmDialogState extends State<_ExitConfirmDialog> {
+  // 0 = No (stay), 1 = Yes (exit)
+  int _focused = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyboardListener(
+      focusNode: FocusNode()..requestFocus(),
+      autofocus: true,
+      onKeyEvent: (event) {
+        if (event is! KeyDownEvent) return;
+        if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.arrowRight) {
+          setState(() => _focused = _focused == 0 ? 1 : 0);
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.select) {
+          Navigator.pop(context, _focused == 1);
+        }
+        if (event.logicalKey == LogicalKeyboardKey.escape ||
+            event.logicalKey == LogicalKeyboardKey.goBack) {
+          Navigator.pop(context, false);
+        }
+      },
+      child: AlertDialog(
+        backgroundColor: Colors.black.withOpacity(0.95),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppTheme.primary, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.exit_to_app, color: Colors.white),
+            SizedBox(width: 10),
+            Text('প্লেয়ার থেকে বের হবেন?',
+                style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: const Text(
+          'আপনি কি সত্যিই লাইভ টিভি প্লেয়ার থেকে বের হতে চান?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          _DialogButton(
+            label: 'না, থাকুন',
+            focused: _focused == 0,
+            color: Colors.white24,
+            onTap: () => Navigator.pop(context, false),
+          ),
+          _DialogButton(
+            label: 'হ্যাঁ, বের হন',
+            focused: _focused == 1,
+            color: Colors.red,
+            onTap: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Settings Dialog with Remote Control ─────────────────────────────────────
+
+class _SettingsDialog extends StatefulWidget {
+  final AppState appState;
+  const _SettingsDialog({required this.appState});
+
+  @override
+  State<_SettingsDialog> createState() => _SettingsDialogState();
+}
+
+class _SettingsDialogState extends State<_SettingsDialog> {
+  // Focus items: 0=boot toggle, 1=full settings, 2=close
+  int _focused = 0;
+  static const int _itemCount = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    return KeyboardListener(
+      focusNode: FocusNode()..requestFocus(),
+      autofocus: true,
+      onKeyEvent: (event) {
+        if (event is! KeyDownEvent) return;
+        if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+          setState(() => _focused = (_focused - 1 + _itemCount) % _itemCount);
+        }
+        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+          setState(() => _focused = (_focused + 1) % _itemCount);
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.select) {
+          _activateFocused();
+        }
+        if (event.logicalKey == LogicalKeyboardKey.escape ||
+            event.logicalKey == LogicalKeyboardKey.goBack) {
+          Navigator.pop(context);
+        }
+      },
+      child: AlertDialog(
+        backgroundColor: Colors.black.withOpacity(0.95),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: AppTheme.primary, width: 1.5),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.settings, color: Colors.white),
+            SizedBox(width: 10),
+            Text('প্লেয়ার সেটিংস',
+                style: TextStyle(color: Colors.white)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Boot toggle
+            _SettingsItem(
+              focused: _focused == 0,
+              child: SwitchListTile(
+                title: const Text('Boot Player (অটো প্লেয়ার)',
+                    style: TextStyle(color: Colors.white)),
+                subtitle: Text(
+                  'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
+                  style: TextStyle(
+                      color: Colors.white.withOpacity(0.55),
+                      fontSize: 12),
+                ),
+                activeColor: AppTheme.primary,
+                value: widget.appState.isPlayerBootEnabled,
+                onChanged: (v) {
+                  widget.appState.togglePlayerBoot();
+                  setState(() {});
+                },
+              ),
+            ),
+            if (widget.appState.isAuthenticated)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: ListTile(
+                  leading: const Icon(Icons.stars_rounded,
+                      color: Color(0xFFEAB308)),
+                  title: Text(
+                    widget.appState.userProfile?.email ?? '',
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  subtitle: Text(
+                    'প্ল্যান: ${widget.appState.userProfile?.plan ?? ''}',
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          _DialogButton(
+            label: 'সেটিংস',
+            focused: _focused == 1,
+            color: Colors.white38,
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/settings');
+            },
+          ),
+          _DialogButton(
+            label: 'বন্ধ',
+            focused: _focused == 2,
+            color: AppTheme.primary,
+            onTap: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _activateFocused() {
+    switch (_focused) {
+      case 0:
+        widget.appState.togglePlayerBoot();
+        setState(() {});
+        break;
+      case 1:
+        Navigator.pop(context);
+        Navigator.pushNamed(context, '/settings');
+        break;
+      case 2:
+        Navigator.pop(context);
+        break;
+    }
+  }
+}
+
+// ─── Shared dialog button ─────────────────────────────────────────────────────
+
+class _DialogButton extends StatelessWidget {
+  const _DialogButton({
+    required this.label,
+    required this.focused,
+    required this.color,
+    required this.onTap,
+  });
+  final String label;
+  final bool focused;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: focused
+            ? Border.all(color: color, width: 2)
+            : Border.all(color: Colors.transparent),
+        color: focused ? color.withOpacity(0.15) : Colors.transparent,
+      ),
+      child: TextButton(
+        onPressed: onTap,
+        child: Text(label, style: TextStyle(color: focused ? color : Colors.white54)),
+      ),
+    );
+  }
+}
+
+// ─── Settings item focus highlight ───────────────────────────────────────────
+
+class _SettingsItem extends StatelessWidget {
+  const _SettingsItem({required this.focused, required this.child});
+  final bool focused;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: focused ? AppTheme.primary : Colors.transparent,
+          width: 1.5,
+        ),
+        color: focused ? AppTheme.primary.withOpacity(0.08) : Colors.transparent,
+      ),
+      child: child,
     );
   }
 }
@@ -766,19 +1036,29 @@ class _OverlayBtn extends StatelessWidget {
   }
 }
 
+// ─── Top Overlay ──────────────────────────────────────────────────────────────
+// Channel name shown ONLY here (top-left), with channel number.
+// When typing a number, typedDisplay replaces the channel name area.
+
 class _TopOverlay extends StatelessWidget {
   const _TopOverlay({
     required this.channel,
+    required this.channelNumber,
+    required this.totalChannels,
     required this.isAuthenticated,
     required this.userPlan,
     required this.onSettings,
     required this.onExit,
+    this.typedDisplay,
   });
   final dynamic channel;
+  final int channelNumber;
+  final int totalChannels;
   final bool isAuthenticated;
   final String? userPlan;
   final VoidCallback onSettings;
   final VoidCallback onExit;
+  final String? typedDisplay; // non-null while user types channel number
 
   @override
   Widget build(BuildContext context) {
@@ -793,86 +1073,134 @@ class _TopOverlay extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Exit
+          // Exit button
           IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
                 color: Colors.white70, size: 20),
             onPressed: onExit,
           ),
           const SizedBox(width: 8),
-          // Channel info
-          Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Text('LIVE',
-                    style: TextStyle(
-                        color: Colors.red,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1)),
-                const SizedBox(width: 12),
-                Text(
-                  channel.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    channel.quality,
-                    style: const TextStyle(
-                        color: AppTheme.primary,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold),
-                  ),
-                ),
-                if (channel.isPremium == 1) ...[
-                  const SizedBox(width: 6),
-                  Container(
+
+          // ── Channel info / number input at top-left ──────────────────────
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: typedDisplay != null
+                // Number-input mode: show typed number + channel name preview
+                ? Container(
+                    key: const ValueKey('typing'),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 2),
+                        horizontal: 18, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAB308).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.black.withOpacity(0.88),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppTheme.primary, width: 2),
                     ),
-                    child: const Text('PREMIUM',
-                        style: TextStyle(
-                            color: Color(0xFFEAB308),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.dialpad_rounded,
+                            color: AppTheme.primary, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          typedDisplay!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                // Normal mode: LIVE badge + ch number + channel name + quality
+                : Container(
+                    key: const ValueKey('normal'),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // LIVE dot
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('LIVE',
+                            style: TextStyle(
+                                color: Colors.red,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 1)),
+                        const SizedBox(width: 10),
+                        // Channel number
+                        Text(
+                          'CH$channelNumber',
+                          style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        // Channel name
+                        Text(
+                          channel.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Quality badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            channel.quality,
+                            style: const TextStyle(
+                                color: AppTheme.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        if (channel.isPremium == 1) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEAB308).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('PREMIUM',
+                                style: TextStyle(
+                                    color: Color(0xFFEAB308),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ],
-              ],
-            ),
           ),
+
           const Spacer(),
+
           // Auth badge
           if (isAuthenticated && userPlan != null)
             Container(
@@ -896,21 +1224,8 @@ class _TopOverlay extends StatelessWidget {
                 ],
               ),
             ),
-          // Channel list toggle hint
-          Opacity(
-            opacity: 0.6,
-            child: Row(
-              children: [
-                const Text('চ্যানেল লিস্ট',
-                    style:
-                        TextStyle(color: Colors.white54, fontSize: 12)),
-                const SizedBox(width: 4),
-                const Icon(Icons.chevron_right,
-                    color: Colors.white38, size: 16),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
+
+          // Settings button
           IconButton(
             icon: const Icon(Icons.settings_rounded,
                 color: Colors.white70, size: 22),
@@ -922,26 +1237,20 @@ class _TopOverlay extends StatelessWidget {
   }
 }
 
+// ─── Bottom Overlay ───────────────────────────────────────────────────────────
+// Only play/pause + LIVE badge + CH counter. No seek bar. No hint text.
+
 class _BottomOverlay extends StatelessWidget {
   const _BottomOverlay({
     required this.ctrl,
-    required this.isLive,
     required this.onPlayPause,
     required this.channelIndex,
     required this.totalChannels,
   });
   final VideoPlayerController ctrl;
-  final bool isLive;
   final VoidCallback onPlayPause;
   final int channelIndex;
   final int totalChannels;
-
-  String _fmt(Duration d) {
-    if (d <= Duration.zero) return '00:00';
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -956,6 +1265,7 @@ class _BottomOverlay extends StatelessWidget {
       ),
       child: Row(
         children: [
+          // Play/Pause
           IconButton(
             icon: Icon(
               ctrl.value.isPlaying
@@ -966,7 +1276,7 @@ class _BottomOverlay extends StatelessWidget {
             ),
             onPressed: onPlayPause,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
           // LIVE badge
           Container(
             padding:
@@ -988,32 +1298,8 @@ class _BottomOverlay extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 12),
-          if (!isLive) ...[
-            Text(_fmt(ctrl.value.position),
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 12)),
-            Expanded(
-              child: VideoProgressIndicator(
-                ctrl,
-                allowScrubbing: true,
-                colors: const VideoProgressColors(
-                  playedColor: AppTheme.primary,
-                  bufferedColor: Colors.white24,
-                  backgroundColor: Colors.white12,
-                ),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
-              ),
-            ),
-            Text(_fmt(ctrl.value.duration),
-                style: const TextStyle(
-                    color: Colors.white70, fontSize: 12)),
-          ] else
-            const Expanded(child: SizedBox.shrink()),
-
-          const SizedBox(width: 12),
-          // Channel number indicator
+          const Spacer(),
+          // Channel counter
           Text(
             'CH ${channelIndex + 1} / $totalChannels',
             style: const TextStyle(
@@ -1021,30 +1307,7 @@ class _BottomOverlay extends StatelessWidget {
                 fontSize: 12,
                 fontWeight: FontWeight.bold),
           ),
-          const SizedBox(width: 8),
-          // Remote hints
-          const _RemoteHint(keys: '▲▼ চ্যানেল  ◀ ব্যাক  OK প্লে  ► লিস্ট'),
         ],
-      ),
-    );
-  }
-}
-
-class _RemoteHint extends StatelessWidget {
-  const _RemoteHint({required this.keys});
-  final String keys;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        keys,
-        style: const TextStyle(color: Colors.white38, fontSize: 10),
       ),
     );
   }
@@ -1097,17 +1360,61 @@ class _ChannelToast extends StatelessWidget {
   }
 }
 
-class _ChannelSidePanel extends StatelessWidget {
+// ─── Channel Side Panel ───────────────────────────────────────────────────────
+
+class _ChannelSidePanel extends StatefulWidget {
   const _ChannelSidePanel({
     required this.channels,
     required this.currentIndex,
+    required this.focusedIndex,
     required this.onSelect,
     required this.onClose,
   });
   final List channels;
   final int currentIndex;
+  final int focusedIndex;
   final ValueChanged<int> onSelect;
   final VoidCallback onClose;
+
+  @override
+  State<_ChannelSidePanel> createState() => _ChannelSidePanelState();
+}
+
+class _ChannelSidePanelState extends State<_ChannelSidePanel> {
+  late final ScrollController _scroll;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll = ScrollController();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFocused());
+  }
+
+  @override
+  void didUpdateWidget(_ChannelSidePanel old) {
+    super.didUpdateWidget(old);
+    if (old.focusedIndex != widget.focusedIndex) {
+      _scrollToFocused();
+    }
+  }
+
+  void _scrollToFocused() {
+    const itemHeight = 44.0;
+    final offset = widget.focusedIndex * itemHeight;
+    if (_scroll.hasClients) {
+      _scroll.animateTo(
+        offset.clamp(0.0, _scroll.position.maxScrollExtent),
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1138,31 +1445,43 @@ class _ChannelSidePanel extends StatelessWidget {
                 IconButton(
                     icon: const Icon(Icons.close,
                         color: Colors.white38, size: 18),
-                    onPressed: onClose),
+                    onPressed: widget.onClose),
               ],
             ),
           ),
           Expanded(
             child: ListView.builder(
-              itemCount: channels.length,
+              controller: _scroll,
+              itemCount: widget.channels.length,
+              itemExtent: 44,
               itemBuilder: (ctx, i) {
-                final ch = channels[i];
-                final active = i == currentIndex;
+                final ch = widget.channels[i];
+                final active = i == widget.currentIndex;
+                final focused = i == widget.focusedIndex;
                 return GestureDetector(
-                  onTap: () => onSelect(i),
+                  onTap: () => widget.onSelect(i),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 10),
-                    color: active
-                        ? AppTheme.primary.withOpacity(0.15)
-                        : Colors.transparent,
+                    decoration: BoxDecoration(
+                      color: focused
+                          ? AppTheme.primary.withOpacity(0.25)
+                          : active
+                              ? AppTheme.primary.withOpacity(0.10)
+                              : Colors.transparent,
+                      border: focused
+                          ? Border(
+                              left: BorderSide(
+                                  color: AppTheme.primary, width: 3))
+                          : null,
+                    ),
                     child: Row(
                       children: [
                         Text(
                           '${i + 1}'.padLeft(3),
                           style: TextStyle(
-                            color: active
+                            color: focused || active
                                 ? AppTheme.primary
                                 : Colors.white38,
                             fontSize: 12,
@@ -1175,11 +1494,13 @@ class _ChannelSidePanel extends StatelessWidget {
                           child: Text(
                             ch.name,
                             style: TextStyle(
-                              color: active
+                              color: focused
                                   ? Colors.white
-                                  : Colors.white60,
+                                  : active
+                                      ? Colors.white
+                                      : Colors.white60,
                               fontSize: 14,
-                              fontWeight: active
+                              fontWeight: (focused || active)
                                   ? FontWeight.bold
                                   : FontWeight.normal,
                             ),
