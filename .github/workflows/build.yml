@@ -103,13 +103,21 @@ jobs:
             --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" \
             --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
 
+      # ── 🔍 ডিবাগিং: APK ফাইলগুলো সঠিকভাবে তৈরি হয়েছে কিনা তা চেক করা ──
+      - name: Check APK Output Directory
+        run: |
+          echo "=== জেনারেট হওয়া APK ফাইলগুলোর তালিকা ==="
+          ls -R build/app/outputs/
+
       # ── 📦 APK রিলিজে পুশ ──
       - name: Push APK to GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "build/app/outputs/flutter-apk/app-*.apk"
+          # এখানে জেনারেট হওয়া সব APK ফাইল খুঁজে নেওয়ার জন্য গ্লোবাল পাথ দেওয়া হয়েছে
+          artifacts: "build/app/outputs/**/*.apk"
           tag: "v1.0.${{ github.run_number }}"
-          name: "oTtking App Release v1.0.${{ github.run_number }}"
+          name: "oTtking App Release v1.0.0.${{ github.run_number }}"
+          commit: ${{ github.sha }}
           body: |
             Automated production build for oTtking App.
 
