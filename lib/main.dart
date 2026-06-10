@@ -44,6 +44,9 @@ Future<void> main() async {
     secureStorage: secureStorage,
   );
 
+  // Bootstrap: theme, auth session এবং channel catalog load করো
+  await appState.bootstrap();
+
   runApp(
     ChangeNotifierProvider.value(
       value: appState,
