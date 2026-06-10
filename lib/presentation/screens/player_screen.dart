@@ -9,6 +9,11 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
+import 'player_widgets/player_top_panel.dart';
+import 'player_widgets/player_bottom_bar.dart';
+import 'player_widgets/channel_list_panel.dart';
+import 'player_widgets/loading_overlay.dart';
+import 'player_widgets/app_info_dialog.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -109,6 +114,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         setState(() => _showControls = false);
       }
     });
+  }
+
+  void _toggleControls() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startControlsTimer();
   }
 
   void _disposeOld(VideoPlayerController old, VoidCallback? listener) {
@@ -308,90 +318,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
   }
 
-  void _showAppInfo() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.black.withOpacity(0.95),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: AppTheme.primary, width: 1.5),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.info_rounded, color: AppTheme.primary),
-            SizedBox(width: 10),
-            Text('অ্যাপ তথ্য',
-                style: TextStyle(color: Colors.white)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Live TV Player',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Version 1.0.0',
-              style: TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'ডেভেলপার:',
-                    style: TextStyle(
-                      color: Colors.white54,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Anirban Sumon',
-                    style: const TextStyle(
-                      color: AppTheme.primary,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('বন্ধ',
-                style: TextStyle(color: AppTheme.primary)),
-          ),
-        ],
-      ),
-    ).then((_) {
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
-      });
-    });
-  }
-
   void _openSettings() {
     _controlsTimer?.cancel();
     showDialog(
@@ -464,6 +390,19 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       ),
     ).then((_) => _startControlsTimer());
+  }
+
+  void _showAppInfo() {
+    showDialog(
+      context: context,
+      builder: (_) => AppInfoDialog(),
+    ).then((_) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      });
+    });
   }
 
   Future<void> _handleExit() async {
@@ -635,9 +574,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (!_longHandled && held.inMilliseconds >= 800) {
           _longHandled = true;
           setState(() => _showChannelList = !_showChannelList);
-        } 
-        // শর্ট প্রেস - প্লে/পজ টগেল
-        else if (!_longHandled) {
+        } else if (!_longHandled) {
+          // শর্ট প্রেস - প্লে/পজ টগেল
           _togglePlayPause();
         }
         _longHandled = false;
@@ -704,7 +642,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 )
               else
-                _LoadingOverlay(
+                LoadingOverlay(
                   hasError: _hasStreamError,
                   retryCount: _retryCount,
                   maxRetry: _maxRetry,
@@ -722,429 +660,38 @@ class _PlayerScreenState extends State<PlayerScreen>
 
               // ========== টপ রাইট প্যানেল ==========
               if (_showControls)
-                Positioned(
-                  top: 20,
-                  right: 20,
-                  child: _TopRightPanel(
-                    channel: ch,
-                    currentIndex: _appState!.currentChannelIndex,
-                    totalChannels: _appState!.channels.length,
-                    typedNumber: _typed,
-                    onSettings: _openSettings,
-                  ),
+                PlayerTopPanel(
+                  channel: ch,
+                  currentIndex: _appState!.currentChannelIndex,
+                  totalChannels: _appState!.channels.length,
+                  onSettings: _openSettings,
                 ),
 
               // ========== বটম কন্ট্রোল বার ==========
               if (_showControls && initialized)
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: _BottomControlBar(
-                    ctrl: _ctrl!,
-                    isLive: isLive,
-                    liveBlink: _liveBlink,
-                    onPlayPause: _togglePlayPause,
-                    onExit: _handleExit,
-                  ),
+                PlayerBottomBar(
+                  ctrl: _ctrl!,
+                  isLive: isLive,
+                  liveBlink: _liveBlink,
+                  onPlayPause: _togglePlayPause,
+                  onExit: _handleExit,
                 ),
 
               // ========== চ্যানেল লিস্ট সাইড প্যানেল ==========
               if (_showChannelList)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: _ChannelSidePanel(
-                    channels: _appState!.channels,
-                    currentIndex: _appState!.currentChannelIndex,
-                    onSelect: (i) {
-                      setState(() => _showChannelList = false);
-                      _switchToIndex(i);
-                    },
-                    onClose: () =>
-                        setState(() => _showChannelList = false),
-                  ),
+                ChannelListPanel(
+                  channels: _appState!.channels,
+                  currentIndex: _appState!.currentChannelIndex,
+                  onSelect: (i) {
+                    setState(() => _showChannelList = false);
+                    _switchToIndex(i);
+                  },
+                  onClose: () =>
+                      setState(() => _showChannelList = false),
                 ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ========== টপ রাইট প্যানেল উইজেট ==========
-class _TopRightPanel extends StatelessWidget {
-  const _TopRightPanel({
-    required this.channel,
-    required this.currentIndex,
-    required this.totalChannels,
-    required this.typedNumber,
-    required this.onSettings,
-  });
-
-  final dynamic channel;
-  final int currentIndex;
-  final int totalChannels;
-  final String typedNumber;
-  final VoidCallback onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // চ্যানেল নম্বার এবং নাম
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.black54,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'CH ${currentIndex + 1}',
-                style: const TextStyle(
-                  color: AppTheme.primary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                channel.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.right,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        // সেটিংস বোতাম
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: Colors.transparent,
-              width: 2,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.settings_rounded,
-                color: Colors.white70, size: 28),
-            onPressed: onSettings,
-            tooltip: 'সেটিংস',
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ========== বটম কন্ট্রোল বার উইজেট ==========
-class _BottomControlBar extends StatelessWidget {
-  const _BottomControlBar({
-    required this.ctrl,
-    required this.isLive,
-    required this.liveBlink,
-    required this.onPlayPause,
-    required this.onExit,
-  });
-
-  final VideoPlayerController ctrl;
-  final bool isLive;
-  final bool liveBlink;
-  final VoidCallback onPlayPause;
-  final VoidCallback onExit;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.bottomCenter,
-          end: Alignment.topCenter,
-          colors: [Colors.black.withOpacity(0.85), Colors.transparent],
-        ),
-      ),
-      child: Row(
-        children: [
-          // প্লে/পজ বোতাম
-          IconButton(
-            icon: Icon(
-              ctrl.value.isPlaying
-                  ? Icons.pause_circle_filled_rounded
-                  : Icons.play_circle_filled_rounded,
-              color: Colors.white,
-              size: 36,
-            ),
-            onPressed: onPlayPause,
-          ),
-          const SizedBox(width: 12),
-
-          // LIVE ব্লিংকিং ব্যাজ
-          if (isLive)
-            AnimatedOpacity(
-              opacity: liveBlink ? 1.0 : 0.4,
-              duration: const Duration(milliseconds: 300),
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Row(
-                  children: [
-                    CircleAvatar(radius: 3, backgroundColor: Colors.white),
-                    SizedBox(width: 6),
-                    Text('LIVE',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5)),
-                  ],
-                ),
-              ),
-            ),
-
-          const Spacer(),
-
-          // এক্সিট বোতাম
-          IconButton(
-            icon: const Icon(Icons.exit_to_app_rounded,
-                color: Colors.white70, size: 24),
-            onPressed: onExit,
-            tooltip: 'এক্সিট',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ========== লোডিং ওভারলে উইজেট ==========
-class _LoadingOverlay extends StatelessWidget {
-  const _LoadingOverlay({
-    required this.hasError,
-    required this.retryCount,
-    required this.maxRetry,
-    required this.channelName,
-    required this.onRetry,
-    required this.onNext,
-  });
-  final bool hasError;
-  final int retryCount;
-  final int maxRetry;
-  final String channelName;
-  final VoidCallback onRetry;
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (hasError) ...[
-              const Icon(Icons.signal_wifi_statusbar_connected_no_internet_4,
-                  color: Colors.white38, size: 64),
-              const SizedBox(height: 16),
-              Text(
-                '$channelName — চ্যানেল অফলাইন',
-                style: const TextStyle(
-                    color: Colors.white60, fontSize: 18),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _OverlayBtn(
-                    icon: Icons.refresh_rounded,
-                    label: 'রিট্রাই',
-                    onTap: onRetry,
-                    color: AppTheme.primary,
-                  ),
-                  const SizedBox(width: 16),
-                  _OverlayBtn(
-                    icon: Icons.skip_next_rounded,
-                    label: 'পরের চ্যানেল',
-                    onTap: onNext,
-                    color: Colors.white24,
-                  ),
-                ],
-              ),
-            ] else ...[
-              CircularProgressIndicator(
-                  color: AppTheme.primary, strokeWidth: 3),
-              const SizedBox(height: 16),
-              if (retryCount > 0)
-                Text(
-                  'পুনরায় চেষ্টা করা হচ্ছে... ($retryCount/$maxRetry)',
-                  style: const TextStyle(
-                      color: Colors.white54, fontSize: 14),
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ========== ওভারলে বোতাম উইজেট ==========
-class _OverlayBtn extends StatelessWidget {
-  const _OverlayBtn(
-      {required this.icon,
-      required this.label,
-      required this.onTap,
-      required this.color});
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton.icon(
-      onPressed: onTap,
-      style: TextButton.styleFrom(
-        backgroundColor: color.withOpacity(0.15),
-        foregroundColor: color,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: color.withOpacity(0.4))),
-      ),
-      icon: Icon(icon),
-      label: Text(label,
-          style: const TextStyle(
-              fontSize: 15, fontWeight: FontWeight.bold)),
-    );
-  }
-}
-
-// ========== চ্যানেল সাইড প্যানেল উইজেট ==========
-class _ChannelSidePanel extends StatelessWidget {
-  const _ChannelSidePanel({
-    required this.channels,
-    required this.currentIndex,
-    required this.onSelect,
-    required this.onClose,
-  });
-  final List channels;
-  final int currentIndex;
-  final ValueChanged<int> onSelect;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 300,
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.92),
-        border: Border(
-            left: BorderSide(
-                color: AppTheme.primary.withOpacity(0.3), width: 1)),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
-              children: [
-                const Icon(Icons.list_rounded,
-                    color: AppTheme.primary, size: 20),
-                const SizedBox(width: 8),
-                const Text('চ্যানেল লিস্ট',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16)),
-                const Spacer(),
-                IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white38, size: 18),
-                    onPressed: onClose),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: channels.length,
-              itemBuilder: (ctx, i) {
-                final ch = channels[i];
-                final active = i == currentIndex;
-                return GestureDetector(
-                  onTap: () => onSelect(i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    color: active
-                        ? AppTheme.primary.withOpacity(0.15)
-                        : Colors.transparent,
-                    child: Row(
-                      children: [
-                        Text(
-                          '${i + 1}'.padLeft(3),
-                          style: TextStyle(
-                            color: active
-                                ? AppTheme.primary
-                                : Colors.white38,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            ch.name,
-                            style: TextStyle(
-                              color: active
-                                  ? Colors.white
-                                  : Colors.white60,
-                              fontSize: 14,
-                              fontWeight: active
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (active)
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
       ),
     );
   }
