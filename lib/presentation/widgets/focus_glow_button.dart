@@ -1,4 +1,5 @@
 // lib/presentation/widgets/focus_glow_button.dart
+// ✅ FIXED — ADDED FOCUSNODE FOR TV REMOTE NAVIGATION COMPATIBILITY
 
 import 'package:flutter/material.dart';
 
@@ -8,14 +9,16 @@ class FocusGlowButton extends StatefulWidget {
     required this.label,
     required this.icon, 
     required this.onTap,
+    this.focusNode, // 👈 ১. এখানে focusNode প্যারামিটার যুক্ত করা হয়েছে
     this.trailing,
     this.selected = false,
-    this.isTV = false, // টিভি নাকি মোবাইল তা নির্ধারণ করার ফ্ল্যাগ
+    this.isTV = false,
   });
 
   final String label;
   final dynamic icon; 
   final VoidCallback onTap;
+  final FocusNode? focusNode; // 👈 ২. ভ্যারিয়েবল ডিক্লেয়ার করা হয়েছে
   final Widget? trailing;
   final bool selected;
   final bool isTV;
@@ -32,7 +35,7 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
     final theme = Theme.of(context);
     final active = widget.selected || _focused;
 
-    // লোগো ইমেজ বা আইকন সাইজিং এবং শেপ (ইমেজের মতো গোল করার জন্য ClipRRect ব্যবহার করা হয়েছে)
+    // লোগো ইমেজ বা আইকন সাইজিং এবং শেপ
     Widget logoWidget;
     if (widget.icon is Widget) {
       logoWidget = Container(
@@ -40,7 +43,7 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
         height: widget.isTV ? 48 : 56,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white, // লোগোর ব্যাকগ্রাউন্ড সাদা
+          color: Colors.white,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.1),
@@ -63,6 +66,7 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
     }
 
     return Focus(
+      focusNode: widget.focusNode, // 👈 ৩. প্যারামিটার থেকে আসা নোডটি এখানে লিঙ্ক করা হয়েছে
       onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
       child: GestureDetector(
         onTap: widget.onTap,
@@ -71,18 +75,18 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
           decoration: BoxDecoration(
             color: active
                 ? theme.colorScheme.primary.withAlpha(26)
-                : const Color(0xFF1E293B), // ইমেজের মতো ডার্ক কার্ড কালার
-            borderRadius: BorderRadius.circular(24), // ইমেজের মতো সুন্দর রাউন্ডেড কর্নার
+                : const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(
               color: active
-                  ? const Color(0xFF06B6D4) // ইমেজের মতো উজ্জ্বল সায়ান/ব্লু গ্লো বর্ডার
+                  ? const Color(0xFF06B6D4)
                   : Colors.white.withAlpha(15),
               width: active ? 2.5 : 1,
             ),
             boxShadow: active
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF06B6D4).withAlpha(100), // সায়ান গ্লো ইফেক্ট
+                      color: const Color(0xFF06B6D4).withAlpha(100),
                       blurRadius: 16,
                       spreadRadius: 1,
                     ),
@@ -96,10 +100,8 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
               borderRadius: BorderRadius.circular(24),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                // ── হুবহু ইমেজ UI কন্ডিশন ──────────────────────────────────────────
                 child: widget.isTV
                     ? Row(
-                        // টিভি মোড: বামে লোগো, ডানে লেখা
                         children: [
                           logoWidget,
                           const SizedBox(width: 14),
@@ -125,7 +127,6 @@ class _FocusGlowButtonState extends State<FocusGlowButton> {
                         ],
                       )
                     : Column(
-                        // মোবাইল মোড: উপরে লোগো, নিচে লেখা
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           logoWidget,
