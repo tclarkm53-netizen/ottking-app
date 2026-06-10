@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // রিমোটের ব্যাক বাটন প্রেস করলে অ্যাপ ক্লোজ হওয়ার গ্লোবাল হ্যান্ডলার
+  // রিমোটের ব্যাক বাটন প্রেস করলে অ্যাপ ক্লোজ হওয়ার গ্লোবাল হ্যান্ডলার
   void _handleKeyEvent(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     final key = event.logicalKey;
@@ -340,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       left: 6,
                                                       child: Row(
                                                         children: [
-                                                          // যদি চ্যানেল প্রিমিয়াম হয় (সার্ভার ফ্ল্যাগ অনুযায়ী)
+                                                          // যদি চ্যানেল প্রিমিয়াম হয় (সার্ভার ফ্ল্যাগ অনুযায়ী)
                                                           if (channel.isPremium == true || channel.type == 'premium')
                                                             Container(
                                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -348,7 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                               decoration: BoxDecoration(
                                                                 color: Colors.amber,
                                                                 borderRadius: BorderRadius.circular(4),
-                                                              ),
+                                                               Deal: null),
                                                               child: const Text('PREMIUM', style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w900)),
                                                             ),
                                                           
