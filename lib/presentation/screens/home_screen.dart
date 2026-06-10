@@ -1,14 +1,14 @@
 // lib/presentation/screens/home_screen.dart
-// ✅ 100% PRODUCTION READY — OPTIMIZED FOR TV REMOTE & SPLIT-VIEW IPTV LAYOUT
-// ✅ FIXED: Invalid 'Deal' parameter removed & missing 'type' getter handled safely
+// Professional TV landscape home — sidebar categories + channel grid
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../../core/constants/app_constants.dart';
 import '../providers/app_state.dart';
-import '../widgets/focus_glow_button.dart';
+import '../widgets/tv_focus_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -19,45 +19,34 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  final FocusNode _settingsFocusNode = FocusNode(debugLabel: 'settings-focus');
-  final PageController _pageController = PageController();
-  
   int _selectedCategoryIndex = 0;
-  bool _settingsHasFocus = false;
 
-  // টিভি রিমোটের মেমোরি ফোকাস ট্র্যাকিং নোড
-  final List<FocusNode> _categoryFocusNodes = [];
-  final List<FocusNode> _channelFocusNodes = [];
+  final List<FocusNode> _catNodes = [];
+  final List<FocusNode> _chNodes = [];
 
   @override
   void initState() {
     super.initState();
-    _settingsFocusNode.addListener(() {
-      setState(() {
-        _settingsHasFocus = _settingsFocusNode.hasFocus;
-      });
-    });
+    // Ensure landscape
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   @override
   void dispose() {
     _rootFocusNode.dispose();
-    _settingsFocusNode.dispose();
-    _pageController.dispose();
-    for (var node in _categoryFocusNodes) {
-      node.dispose();
-    }
-    for (var node in _channelFocusNodes) {
-      node.dispose();
-    }
+    for (final n in _catNodes) n.dispose();
+    for (final n in _chNodes) n.dispose();
     super.dispose();
   }
 
-  // রিমোটের ব্যাক বাটন প্রেস করলে অ্যাপ ক্লোজ হওয়ার গ্লোবাল হ্যান্ডলার
-  void _handleKeyEvent(KeyEvent event) {
+  void _handleKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
-    final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
+    if (event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.goBack) {
       SystemChannels.platform.invokeMethod('SystemNavigator.pop');
     }
   }
@@ -65,326 +54,618 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    
-    // ডাইনামিক ক্যাটাগরি ক্যাটালগ তৈরি ('All' সহ)
-    final List<dynamic> extendedCategories = [];
-    if (appState.categories.isNotEmpty) {
-      extendedCategories.add({'name': 'All', 'icon': '🌐'});
-      extendedCategories.addAll(appState.categories.map((c) => {'name': c.name, 'icon': c.icon}));
-    } else {
-      extendedCategories.add({'name': 'All', 'icon': '🌐'});
-    }
+    final size = MediaQuery.of(context).size;
 
-    // ফোকাস নোডের সংখ্যা ডাইনামিকালি মেইনটেইন করা
-    while (_categoryFocusNodes.length < extendedCategories.length) {
-      _categoryFocusNodes.add(FocusNode());
-    }
+    // Categories with "All" prepended
+    final cats = <Map<String, String>>[
+      {'name': 'All', 'icon': '🌐'},
+      ...appState.categories.map((c) => {'name': c.name, 'icon': c.icon}),
+    ];
 
-    final String currentCategoryName = extendedCategories[_selectedCategoryIndex]['name'];
+    while (_catNodes.length < cats.length) _catNodes.add(FocusNode());
 
-    // ক্যাটাগরি ফিল্টারিং লজিক
-    final filteredChannels = appState.channels.where((channel) {
-      if (currentCategoryName == 'All' || currentCategoryName.isEmpty) return true;
-      return channel.category.toLowerCase() == currentCategoryName.toLowerCase();
+    final currentCat = cats[_selectedCategoryIndex]['name']!;
+    final filtered = appState.channels.where((ch) {
+      if (currentCat == 'All') return true;
+      return ch.category.toLowerCase() == currentCat.toLowerCase();
     }).toList();
 
-    while (_channelFocusNodes.length < filteredChannels.length) {
-      _channelFocusNodes.add(FocusNode());
-    }
+    while (_chNodes.length < filtered.length) _chNodes.add(FocusNode());
 
     return KeyboardListener(
       focusNode: _rootFocusNode,
       autofocus: true,
-      onKeyEvent: _handleKeyEvent,
+      onKeyEvent: _handleKey,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A), // ডার্ক স্লেট ব্লু
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0F172A),
-          elevation: 0,
-          title: Text(
-            AppConstants.appName,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 24,
-              letterSpacing: 1.0,
+        backgroundColor: AppTheme.surface,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // ── Top bar ─────────────────────────────────────────────────────
+              _TopBar(appState: appState),
+
+              // ── Main split view ─────────────────────────────────────────────
+              Expanded(
+                child: appState.isLoading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                          color: AppTheme.primary,
+                          strokeWidth: 3,
+                        ),
+                      )
+                    : Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Sidebar — categories
+                            SizedBox(
+                              width: size.width * 0.18,
+                              child: _CategorySidebar(
+                                cats: cats,
+                                catNodes: _catNodes,
+                                selectedIndex: _selectedCategoryIndex,
+                                onSelect: (i) => setState(
+                                    () => _selectedCategoryIndex = i),
+                              ),
+                            ),
+
+                            const SizedBox(width: 20),
+
+                            // Channel grid
+                            Expanded(
+                              child: _ChannelGrid(
+                                channels: filtered,
+                                chNodes: _chNodes,
+                                appState: appState,
+                                categoryName: currentCat,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Top Bar ─────────────────────────────────────────────────────────────────
+
+class _TopBar extends StatelessWidget {
+  const _TopBar({required this.appState});
+  final AppState appState;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.border, width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Logo
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'OTT',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                AppConstants.appName,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+
+          const Spacer(),
+
+          // Auth info
+          if (appState.isAuthenticated && appState.userProfile != null) ...[
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.stars_rounded,
+                      color: Color(0xFFEAB308), size: 16),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${appState.userProfile!.email.split('@').first}  •  ${appState.userProfile!.plan}',
+                    style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+
+          // Channel count
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.card,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.live_tv_rounded,
+                    color: AppTheme.primary, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  '${appState.channels.length} চ্যানেল',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ],
             ),
           ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 40),
-              child: Focus(
-                focusNode: _settingsFocusNode,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: _settingsHasFocus ? const Color(0xFF06B6D4).withOpacity(0.2) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _settingsHasFocus ? const Color(0xFF06B6D4) : Colors.transparent,
-                      width: 2,
+
+          const SizedBox(width: 12),
+
+          // Settings button
+          _TvIconButton(
+            icon: Icons.settings_rounded,
+            onTap: () => Navigator.pushNamed(context, '/settings'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TvIconButton extends StatefulWidget {
+  const _TvIconButton({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_TvIconButton> createState() => _TvIconButtonState();
+}
+
+class _TvIconButtonState extends State<_TvIconButton> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      onFocusChange: (v) => setState(() => _focused = v),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _focused
+                ? AppTheme.primary.withOpacity(0.2)
+                : AppTheme.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: _focused ? AppTheme.primary : AppTheme.border,
+            ),
+          ),
+          child: Icon(
+            widget.icon,
+            color: _focused ? AppTheme.primary : Colors.white70,
+            size: 22,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Category Sidebar ─────────────────────────────────────────────────────────
+
+class _CategorySidebar extends StatelessWidget {
+  const _CategorySidebar({
+    required this.cats,
+    required this.catNodes,
+    required this.selectedIndex,
+    required this.onSelect,
+  });
+
+  final List<Map<String, String>> cats;
+  final List<FocusNode> catNodes;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(left: 4, bottom: 12, top: 8),
+          child: Text(
+            '🔥 CATEGORIES',
+            style: TextStyle(
+              color: Colors.white38,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: cats.length,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (context, i) {
+              final cat = cats[i];
+              final selected = selectedIndex == i;
+              return _CatItem(
+                focusNode: catNodes[i],
+                icon: cat['icon']!,
+                name: cat['name']!,
+                selected: selected,
+                onTap: () => onSelect(i),
+                onFocus: () => onSelect(i),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CatItem extends StatefulWidget {
+  const _CatItem({
+    required this.focusNode,
+    required this.icon,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+    required this.onFocus,
+  });
+
+  final FocusNode focusNode;
+  final String icon;
+  final String name;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onFocus;
+
+  @override
+  State<_CatItem> createState() => _CatItemState();
+}
+
+class _CatItemState extends State<_CatItem> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _focused || widget.selected;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Focus(
+        focusNode: widget.focusNode,
+        onFocusChange: (v) {
+          setState(() => _focused = v);
+          if (v) widget.onFocus();
+        },
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: _focused
+                  ? AppTheme.primary
+                  : widget.selected
+                      ? AppTheme.primary.withOpacity(0.15)
+                      : AppTheme.card,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: active ? AppTheme.primary : Colors.transparent,
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(widget.icon, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    widget.name,
+                    style: TextStyle(
+                      color: active ? Colors.white : Colors.white60,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: IconButton(
-                    icon: Icon(
-                      Icons.settings_suggest_rounded,
-                      color: _settingsHasFocus ? const Color(0xFF06B6D4) : Colors.white70,
-                      size: 28,
-                    ),
-                    onPressed: () => Navigator.pushNamed(context, '/settings'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Channel Grid ─────────────────────────────────────────────────────────────
+
+class _ChannelGrid extends StatelessWidget {
+  const _ChannelGrid({
+    required this.channels,
+    required this.chNodes,
+    required this.appState,
+    required this.categoryName,
+  });
+
+  final List channels;
+  final List<FocusNode> chNodes;
+  final AppState appState;
+  final String categoryName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12, top: 8, left: 4),
+          child: Row(
+            children: [
+              Text(
+                '📺 $categoryName CHANNELS',
+                style: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.primary.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${channels.length}',
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: channels.isEmpty
+              ? const Center(
+                  child: Text(
+                    'কোনো চ্যানেল পাওয়া যায়নি',
+                    style: TextStyle(color: Colors.white38, fontSize: 16),
+                  ),
+                )
+              : GridView.builder(
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 5,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.4,
+                  ),
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: channels.length,
+                  itemBuilder: (context, i) {
+                    final ch = channels[i];
+                    final origIdx = appState.channels.indexOf(ch);
+                    final playing =
+                        appState.currentChannelIndex == origIdx;
+
+                    return TvFocusCard(
+                      focusNode: chNodes[i],
+                      selected: playing,
+                      padding: EdgeInsets.zero,
+                      onTap: () {
+                        appState.currentChannelIndex = origIdx;
+                        Navigator.pushNamed(context, '/player');
+                      },
+                      child: _ChannelCard(channel: ch, isPlaying: playing),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChannelCard extends StatelessWidget {
+  const _ChannelCard({required this.channel, required this.isPlaying});
+  final dynamic channel;
+  final bool isPlaying;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(13),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Logo area
+          Container(
+            color: AppTheme.card,
+            padding: const EdgeInsets.all(12),
+            child: channel.logoUrl.trim().isNotEmpty
+                ? Image.network(
+                    channel.logoUrl.trim(),
+                    fit: BoxFit.contain,
+                    loadingBuilder: (ctx, child, prog) =>
+                        prog == null ? child : _logoPlaceholder(),
+                    errorBuilder: (_, __, ___) => _logoPlaceholder(),
+                  )
+                : _logoPlaceholder(),
+          ),
+
+          // Channel name bottom bar
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withOpacity(0.85),
+                    Colors.transparent
+                  ],
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                ),
+              ),
+              child: Text(
+                channel.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+
+          // Badges top-left
+          Positioned(
+            top: 6,
+            left: 6,
+            child: Row(
+              children: [
+                if (channel.isPremium == 1)
+                  _Badge(
+                      label: 'PREMIUM',
+                      bg: const Color(0xFFEAB308),
+                      fg: Colors.black),
+                const SizedBox(width: 3),
+                _Badge(
+                  label: channel.quality.toUpperCase(),
+                  bg: Colors.black.withOpacity(0.7),
+                  fg: AppTheme.primary,
+                ),
+              ],
+            ),
+          ),
+
+          // Now playing glow overlay
+          if (isPlaying)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppTheme.primary, width: 2),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Align(
+                  alignment: Alignment.topRight,
+                  child: Padding(
+                    padding: EdgeInsets.all(6),
+                    child: _LiveDot(),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
-        body: appState.isLoading
-            ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4))))
-            : Column(
-                children: [
-                  // ── ১. ১০০% ফুল উইথ ব্যানার স্লাইডার ──────────────────
-                  if (appState.banners.isNotEmpty)
-                    SizedBox(
-                      height: 200,
-                      width: double.infinity,
-                      child: PageView.builder(
-                        controller: _pageController,
-                        itemCount: appState.banners.length,
-                        itemBuilder: (context, index) {
-                          final banner = appState.banners[index];
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 8),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              image: banner.imageUrl != null
-                                  ? DecorationImage(image: NetworkImage(banner.imageUrl!), fit: BoxFit.cover)
-                                  : null,
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                gradient: LinearGradient(
-                                  colors: [Colors.transparent, const Color(0xFF0F172A).withOpacity(0.9)],
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                ),
-                              ),
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    banner.title,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 24),
-                                  ),
-                                  Text(
-                                    banner.subtitle,
-                                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
+        ],
+      ),
+    );
+  }
 
-                  // ── ২. লাইভ স্প্লিট-ভিউ সেকশন (বামে ক্যাটাগরি, ডানে চ্যানেল) ──────────────────
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 10),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          
-                          // 📦 বাম পার্ট: ক্যাটাগরি ভার্টিক্যাল লিস্ট (Width: ২৫%)
-                          SizedBox(
-                            width: 240,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('🔥 CATEGORIES', style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                                const SizedBox(height: 10),
-                                Expanded(
-                                  child: ListView.builder(
-                                    itemCount: extendedCategories.length,
-                                    physics: const BouncingScrollPhysics(),
-                                    itemBuilder: (context, index) {
-                                      final category = extendedCategories[index];
-                                      final isSelected = _selectedCategoryIndex == index;
-                                      final node = _categoryFocusNodes[index];
+  Widget _logoPlaceholder() => const Icon(
+        Icons.live_tv_rounded,
+        color: Colors.white24,
+        size: 32,
+      );
+}
 
-                                      return AnimatedBuilder(
-                                        animation: node,
-                                        builder: (context, _) {
-                                          final hasFocus = node.hasFocus;
-                                          return Padding(
-                                            padding: const EdgeInsets.only(bottom: 8),
-                                            child: Focus(
-                                              focusNode: node,
-                                              onFocusChange: (focused) {
-                                                if (focused) {
-                                                  setState(() => _selectedCategoryIndex = index);
-                                                }
-                                              },
-                                              child: GestureDetector(
-                                                onTap: () => setState(() => _selectedCategoryIndex = index),
-                                                child: AnimatedContainer(
-                                                  duration: const Duration(milliseconds: 200),
-                                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                                  decoration: BoxDecoration(
-                                                    color: hasFocus 
-                                                        ? const Color(0xFF06B6D4) 
-                                                        : (isSelected ? const Color(0xFF06B6D4).withOpacity(0.15) : const Color(0xFF1E293B)),
-                                                    borderRadius: BorderRadius.circular(12),
-                                                    border: Border.all(
-                                                      color: hasFocus ? Colors.white : (isSelected ? const Color(0xFF06B6D4) : Colors.transparent),
-                                                      width: 2,
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      Text(category['icon'], style: const TextStyle(fontSize: 18)),
-                                                      const SizedBox(width: 12),
-                                                      Expanded(
-                                                        child: Text(
-                                                          category['name'],
-                                                          style: TextStyle(
-                                                            color: hasFocus || isSelected ? Colors.white : Colors.white70,
-                                                            fontWeight: FontWeight.bold,
-                                                            fontSize: 14,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          
-                          const SizedBox(width: 24),
+class _Badge extends StatelessWidget {
+  const _Badge(
+      {required this.label, required this.bg, required this.fg});
+  final String label;
+  final Color bg;
+  final Color fg;
 
-                          // 📺 ডান পার্ট: ডাইনামিক চ্যানেল গ্রিড ভিউ (Width: ৭৫%)
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('📺 $currentCategoryName CHANNELS', style: const TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                                const SizedBox(height: 10),
-                                Expanded(
-                                  child: filteredChannels.isEmpty
-                                      ? const Center(child: Text('No channels found.', style: TextStyle(color: Colors.grey)))
-                                      : GridView.builder(
-                                          itemCount: filteredChannels.length,
-                                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount: 4, // ল্যান্ডস্কেপ মোডে ৪টি কলাম আদর্শ
-                                            mainAxisSpacing: 14,
-                                            crossAxisSpacing: 14,
-                                            childAspectRatio: 1.3,
-                                          ),
-                                          itemBuilder: (context, index) {
-                                            final channel = filteredChannels[index];
-                                            final originalIndex = appState.channels.indexOf(channel);
-                                            final isPlayingNow = appState.currentChannelIndex == originalIndex;
-                                            final node = _channelFocusNodes[index];
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+          color: bg, borderRadius: BorderRadius.circular(4)),
+      child: Text(label,
+          style: TextStyle(
+              color: fg, fontSize: 8, fontWeight: FontWeight.w900)),
+    );
+  }
+}
 
-                                            return FocusGlowButton(
-                                              focusNode: node,
-                                              isTV: true,
-                                              label: channel.name,
-                                              icon: Icons.live_tv_rounded,
-                                              selected: isPlayingNow,
-                                              onTap: () {
-                                                appState.currentChannelIndex = originalIndex;
-                                                Navigator.pushNamed(context, '/player');
-                                              },
-                                              trailing: Container(
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFF1E293B),
-                                                  borderRadius: BorderRadius.circular(12),
-                                                ),
-                                                clipBehavior: Clip.antiAlias,
-                                                child: Stack(
-                                                  fit: StackFit.expand,
-                                                  children: [
-                                                    // সার্ভার থেকে আসা রিয়েল লোগো লোড
-                                                    if (channel.logoUrl.trim().isNotEmpty)
-                                                      Padding(
-                                                        padding: const EdgeInsets.all(12.0),
-                                                        child: Image.network(
-                                                          channel.logoUrl.trim(),
-                                                          fit: BoxFit.contain,
-                                                          loadingBuilder: (context, child, progress) {
-                                                            if (progress == null) return child;
-                                                            return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Color(0xFF06B6D4)))));
-                                                          },
-                                                          errorBuilder: (context, error, stack) => const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 32),
-                                                        ),
-                                                      )
-                                                    else
-                                                      const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 32),
-                                                    
-                                                    // ── 🎯 প্রিমিয়াম এবং কোয়ালিটি ব্যাজ লজিক ──
-                                                    Positioned(
-                                                      top: 6,
-                                                      left: 6,
-                                                      child: Row(
-                                                        children: [
-                                                          // ✅ FIXED: সরানো হয়েছে অনুপস্থিত .type এবং যুক্ত করা হয়েছে স্ট্যান্ডার্ড সেফ চয়েস
-                                                          if (channel.isPremium == true)
-                                                            Container(
-                                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                              margin: const EdgeInsets.only(right: 4),
-                                                              decoration: BoxDecoration(
-                                                                color: Colors.amber,
-                                                                borderRadius: BorderRadius.circular(4),
-                                                                // ✅ FIXED: ভুল 'Deal: null' প্রোপার্টিটি এখান থেকে সম্পূর্ণ রিমুভ করা হয়েছে
-                                                              ),
-                                                              child: const Text('PREMIUM', style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w900)),
-                                                            ),
-                                                          
-                                                          // কোয়ালিটি ব্যাজ (HD / SD)
-                                                          Container(
-                                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                                            decoration: BoxDecoration(
-                                                              color: Colors.black.withOpacity(0.75),
-                                                              borderRadius: BorderRadius.circular(4),
-                                                            ),
-                                                            child: Text(
-                                                              channel.quality.toUpperCase(),
-                                                              style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 8, fontWeight: FontWeight.bold),
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+class _LiveDot extends StatelessWidget {
+  const _LiveDot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(radius: 3, backgroundColor: Colors.white),
+          SizedBox(width: 4),
+          Text('LIVE',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
