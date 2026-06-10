@@ -159,7 +159,39 @@ class _HomeScreenState extends State<HomeScreen> {
                           strokeWidth: 3,
                         ),
                       )
-                    : Padding(
+                    : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.wifi_off_rounded,
+                                    color: Colors.white38, size: 48),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'চ্যানেল লোড হয়নি',
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 18),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  appState.errorMessage,
+                                  style: const TextStyle(
+                                      color: Colors.white38, fontSize: 13),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 20),
+                                TextButton.icon(
+                                  onPressed: () => appState.loadCatalog(),
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      color: AppTheme.primary),
+                                  label: const Text('আবার চেষ্টা করুন',
+                                      style:
+                                          TextStyle(color: AppTheme.primary)),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
