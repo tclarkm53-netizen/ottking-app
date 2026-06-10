@@ -1,4 +1,4 @@
-name: 2. Flutter Android CI build
+name: 2. Flutter Android CI build fixed
 
 on:
   workflow_dispatch:
