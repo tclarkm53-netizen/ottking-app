@@ -1,5 +1,6 @@
 // lib/presentation/screens/home_screen.dart
 // ✅ 100% PRODUCTION READY — OPTIMIZED FOR TV REMOTE & SPLIT-VIEW IPTV LAYOUT
+// ✅ FIXED: Invalid 'Deal' parameter removed & missing 'type' getter handled safely
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -340,15 +341,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       left: 6,
                                                       child: Row(
                                                         children: [
-                                                          // যদি চ্যানেল প্রিমিয়াম হয় (সার্ভার ফ্ল্যাগ অনুযায়ী)
-                                                          if (channel.isPremium == true || channel.type == 'premium')
+                                                          // ✅ FIXED: সরানো হয়েছে অনুপস্থিত .type এবং যুক্ত করা হয়েছে স্ট্যান্ডার্ড সেফ চয়েস
+                                                          if (channel.isPremium == true)
                                                             Container(
                                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                               margin: const EdgeInsets.only(right: 4),
                                                               decoration: BoxDecoration(
                                                                 color: Colors.amber,
                                                                 borderRadius: BorderRadius.circular(4),
-                                                               Deal: null),
+                                                                // ✅ FIXED: ভুল 'Deal: null' প্রোপার্টিটি এখান থেকে সম্পূর্ণ রিমুভ করা হয়েছে
+                                                              ),
                                                               child: const Text('PREMIUM', style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w900)),
                                                             ),
                                                           
