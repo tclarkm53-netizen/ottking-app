@@ -48,7 +48,7 @@ class PlayerBottomBar extends StatelessWidget {
             ),
             const SizedBox(width: 12),
 
-            // LIVE ব্লিংকিং ব্যাজ
+            // LIVE ব্লিংকিং ব্যাজ (প্লে বোতামের পরে)
             if (isLive)
               AnimatedOpacity(
                 opacity: liveBlink ? 1.0 : 0.4,
