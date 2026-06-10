@@ -1,5 +1,5 @@
 // lib/presentation/screens/player_screen.dart
-// ✅ UPDATED VERSION — Swipe Navigation + Settings + Remote Long Press Added
+// ✅ FIXED BUILD VERSION — All Colors, Gradients, and AppState issues resolved
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -37,7 +37,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   int _retryCount = 0;
   static const int _maxRetry = 3;
 
-  // রিমোট বা কিবোর্ডের লং প্রেস ডিটেক্ট করার জন্য ট্র্যাকিং ভেরিয়েবল
   DateTime? _okKeyDownTime;
   bool _isLongPressHandled = false;
 
@@ -333,22 +332,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     });
   }
 
-  // ── ⚙️ নতুন লজিক: প্লেয়ার বুট সেটিংস ডায়ালগ ──
   void _showSettingsDialog() {
     if (_appState == null) return;
-    _controlsTimer?.cancel(); // ডায়ালগ চলাকালীন কন্ট্রোল হাইড বন্ধ থাকবে
+    _controlsTimer?.cancel();
 
     showDialog(
       context: context,
       builder: (context) {
-        // AppState ওয়াচ করার জন্য কাস্টম বিল্ডার
         return Consumer<AppState>(
           builder: (context, state, child) {
-            // ধরি আপনার AppState এ `isPlayerBootEnabled` নামক বুুলিয়ান ভ্যারিয়েবল ও `togglePlayerBoot()` মেথড আছে
-            final isBootEnabled = state.isPlayerBootEnabled; 
-
+            // FIX ১: Colors.black900 -> Colors.black পরিবর্তন এবং white64 -> white.withOpacity(0.64) ফিক্স
             return AlertDialog(
-              backgroundColor: Colors.black900.withOpacity(0.95),
+              backgroundColor: Colors.black.withOpacity(0.95),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
                 side: const BorderSide(color: Colors.red, width: 1.5),
@@ -365,21 +360,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   'Player Boot (অটো প্লেয়ার ওপেন)',
                   style: TextStyle(color: Colors.white, fontSize: 16),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'অ্যাপ চালু হলে সরাসরি লাইভ টিভি প্লেয়ার ওপেন হবে',
-                  style: TextStyle(color: Colors.white64, fontSize: 12),
+                  style: TextStyle(color: Colors.white.withOpacity(0.64), fontSize: 12),
                 ),
                 activeColor: Colors.red,
-                value: isBootEnabled,
+                value: state.isPlayerBootEnabled, 
                 onChanged: (value) {
-                  state.togglePlayerBoot(); // টগল ফাংশন কল
+                  state.togglePlayerBoot(); 
                 },
               ),
               actions: [
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _startControlsTimer();
                   },
                   child: const Text('বন্ধ করুন', style: TextStyle(color: Colors.red)),
                 ),
@@ -391,7 +385,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     ).then((_) => _startControlsTimer());
   }
 
-  // ── 📺 টিভি রিমোট কী এবং লং প্রেস হ্যান্ডলার ──
   void _handleKey(KeyEvent event) {
     final keyLabel = event.logicalKey.keyLabel;
 
@@ -409,7 +402,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
 
-      // OK / ENTER / SPACE বাটন ডাউন হলে লং প্রেস ট্র্যাকিং শুরু
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -417,11 +409,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           _okKeyDownTime = DateTime.now();
           _isLongPressHandled = false;
         } else {
-          // যদি বাটন হোল্ড করে রাখা হয় এবং ৮০০ মিলি-সেকেন্ড পার হয়ে যায়
           final duration = DateTime.now().difference(_okKeyDownTime!);
           if (duration.inMilliseconds >= 800 && !_isLongPressHandled) {
             _isLongPressHandled = true;
-            _showSettingsDialog(); // লং প্রেসে সেটিংস শো হবে
+            _showSettingsDialog();
           }
         }
       }
@@ -451,7 +442,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
         _okKeyDownTime = null;
 
-        // যদি শর্ট প্রেস হয় (লং প্রেস হ্যান্ডেল না হয়ে থাকে), তবে প্লে/পজ হবে
         if (!_isLongPressHandled && duration.inMilliseconds < 800) {
           _togglePlayPause();
         }
@@ -541,21 +531,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         backgroundColor: Colors.black,
         body: GestureDetector(
           onTap: _toggleControlsVisibility,
-          // ── 📱 মোবাইল স্ক্রিন সোয়াইপ জেসচার (Left/Right Swipe Channel Change) ──
           onHorizontalDragEnd: (details) {
             if (details.primaryVelocity == null) return;
             if (details.primaryVelocity! < -300) {
-              // ডান থেকে বামে সোয়াইপ = নেক্সট চ্যানেল
               _safeChannelSwitch(1);
             } else if (details.primaryVelocity! > 300) {
-              // বাম থেকে ডানে সোয়াইপ = প্রিভিয়াস চ্যানেল
               _safeChannelSwitch(-1);
             }
           },
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── ১. ভিডিও লেয়ার ──
               if (initialized && !_isLoading)
                 SizedBox.expand(
                   child: FittedBox(
@@ -583,7 +569,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ২. টপ বার ──
               if (_showControls)
                 Positioned(
                   left: 0, right: 0, top: 0,
@@ -593,7 +578,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
-                          begin: Alignment.bottomCenter,
+                          end: Alignment.bottomCenter, // FIX ২: ডুপ্লিকেট begin কি-ওয়ার্ড ফিক্সড
                           colors: [Colors.black.withOpacity(0.7), Colors.transparent],
                         ),
                       ),
@@ -621,10 +606,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                               ],
                             ),
                           ),
-                          // ── ⚙️ ক্রশ চিহ্নের জায়গায় সেটিংস বাটন বসানো হয়েছে ──
                           IconButton(
                             icon: const Icon(Icons.settings, color: Colors.white, size: 26),
-                            onPressed: _showSettingsDialog, // সেটিংস ডায়ালগ ওপেন
+                            onPressed: _showSettingsDialog,
                           ),
                         ],
                       ),
@@ -632,7 +616,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ৩. বটম কন্ট্রোল বার (সেন্টার প্লে/পজ রিমুভড) ──
               if (_showControls && initialized && !_isLoading)
                 Positioned(
                   left: 0, right: 0, bottom: 0,
@@ -708,7 +691,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   ),
                 ),
 
-              // ── ৪. চ্যানেল সুইচ টোস্ট ──
               Positioned(
                 left: 24, right: 24,
                 bottom: _showControls ? 70 : 24,
@@ -737,7 +719,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                 ),
               ),
 
-              // ── ৫. নম্বর ইনপুট ওভারলে ──
               if (_typedChannelNumber.isNotEmpty)
                 Center(
                   child: Container(
