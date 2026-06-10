@@ -15,12 +15,13 @@ class OttKingApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = context.select<AppState, ThemeMode>((s) => s.themeMode);
+    final themeMode =
+        context.select<AppState, ThemeMode>((s) => s.themeMode);
 
     return MaterialApp(
       title: 'OTTKing',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
       initialRoute: '/splash',
