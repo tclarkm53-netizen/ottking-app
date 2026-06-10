@@ -43,12 +43,70 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _handleKey(KeyEvent event) {
+  // কাস্টম টিভি এক্সিট কনফার্মেশন ডায়ালগ
+  Future<bool> _showExitConfirmation(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: AppTheme.card,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.border),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.exit_to_app_rounded, color: AppTheme.primary),
+                SizedBox(width: 10),
+                Text('অ্যাপ বন্ধ করুন', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: const Text(
+              'আপনি কি নিশ্চিতভাবে অ্যাপ্লিকেশনটি থেকে বের হয়ে যেতে চান?',
+              style: TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+            actionsPadding: const EdgeInsets.fromLTRB(0, 0, 16, 12),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('না', style: TextStyle(color: Colors.white60, fontSize: 14)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                ),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('হ্যাঁ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _handleKey(KeyEvent event) async {
     if (event is! KeyDownEvent) return;
     if (event.logicalKey == LogicalKeyboardKey.escape ||
         event.logicalKey == LogicalKeyboardKey.goBack) {
-      SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+      // এক্সিট কনফার্মেশন ডায়ালগ দেখানো হচ্ছে
+      final shouldExit = await _showExitConfirmation(context);
+      if (shouldExit) {
+        SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+      }
     }
+  }
+
+  void _changeCategory(int index) {
+    if (_selectedCategoryIndex == index) return;
+    setState(() {
+      _selectedCategoryIndex = index;
+      // ক্যাটাগরি পরিবর্তনের সময় আগের চ্যানেল নোডগুলো পরিষ্কার করে দেওয়া হচ্ছে যাতে ফিল্টারিং স্মুথ হয়
+      for (final node in _chNodes) {
+        node.dispose();
+      }
+      _chNodes.clear();
+    });
   }
 
   @override
@@ -87,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
               // ── Main split view ─────────────────────────────────────────────
               Expanded(
                 child: appState.isLoading
-                    ? Center(
+                    ? const Center(
                         child: CircularProgressIndicator(
                           color: AppTheme.primary,
                           strokeWidth: 3,
@@ -105,8 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 cats: cats,
                                 catNodes: _catNodes,
                                 selectedIndex: _selectedCategoryIndex,
-                                onSelect: (i) => setState(
-                                    () => _selectedCategoryIndex = i),
+                                onSelect: _changeCategory,
                               ),
                             ),
 
@@ -488,7 +545,7 @@ class _ChannelGrid extends StatelessWidget {
                     crossAxisCount: 5,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
-                    childAspectRatio: 1.4,
+                    childAspectRatio: 1.3, // অ্যাসপেক্ট রেশিও কার্ড টাইপ করা হয়েছে
                   ),
                   physics: const BouncingScrollPhysics(),
                   itemCount: channels.length,
@@ -528,19 +585,31 @@ class _ChannelCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Logo area
+          // Logo Area - কার্ড স্কয়্যার স্কেলে ইমেজ রেন্ডারিং করা হয়েছে
           Container(
             color: AppTheme.card,
-            padding: const EdgeInsets.all(12),
-            child: channel.logoUrl.trim().isNotEmpty
-                ? Image.network(
-                    channel.logoUrl.trim(),
-                    fit: BoxFit.contain,
-                    loadingBuilder: (ctx, child, prog) =>
-                        prog == null ? child : _logoPlaceholder(),
-                    errorBuilder: (_, __, ___) => _logoPlaceholder(),
-                  )
-                : _logoPlaceholder(),
+            padding: const EdgeInsets.all(14),
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: 1.0, // স্কয়ার বক্স প্রপোরশন বাধ্য করা হলো
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.all(6),
+                  child: channel.logoUrl.trim().isNotEmpty
+                      ? Image.network(
+                          channel.logoUrl.trim(),
+                          fit: BoxFit.contain,
+                          loadingBuilder: (ctx, child, prog) =>
+                              prog == null ? child : _logoPlaceholder(),
+                          errorBuilder: (_, __, ___) => _logoPlaceholder(),
+                        )
+                      : _logoPlaceholder(),
+                ),
+              ),
+            ),
           ),
 
           // Channel name bottom bar
@@ -581,9 +650,9 @@ class _ChannelCard extends StatelessWidget {
             child: Row(
               children: [
                 if (channel.isPremium == 1)
-                  _Badge(
+                  const _Badge(
                       label: 'PREMIUM',
-                      bg: const Color(0xFFEAB308),
+                      bg: Color(0xFFEAB308),
                       fg: Colors.black),
                 const SizedBox(width: 3),
                 _Badge(
@@ -620,7 +689,7 @@ class _ChannelCard extends StatelessWidget {
   Widget _logoPlaceholder() => const Icon(
         Icons.live_tv_rounded,
         color: Colors.white24,
-        size: 32,
+        size: 28,
       );
 }
 
