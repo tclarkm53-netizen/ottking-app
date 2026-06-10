@@ -16,6 +16,10 @@ jobs:
       KEY_PASSWORD: "ottking_secure_pass_2026"
       KEY_DN: "CN=ottking, OU=Development, O=oTtking, L=Dhaka, S=Dhaka, C=BD"
 
+    # গিটহাব রিলিজে ফাইল পুশ ও রাইট করার পারমিশন
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -89,13 +93,34 @@ jobs:
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
 
-      # ── 🎯 ফিক্সড সেকশন: ক্লিন লগ মোড (শুধু আসল এরর দেখাবে) ──
+      # ── 🎯 সর্বোচ্চ সাইজ অপ্টিমাইজড রিলিজ বিল্ড ──
       - name: Build Android APK
         run: |
-          # --verbose রিমুভ করা হয়েছে যাতে ফালতু লগ না আসে
           flutter build apk --release \
             --split-per-abi \
+            --obfuscate \
+            --split-debug-info=build/app/outputs/symbols \
             --android-skip-build-dependency-validation \
             --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=HMAC_SECRET_KEY="$HMAC_SECRET_KEY" \
             --dart-define=ENCRYPTION_KEY="$ENCRYPTION_KEY"
+
+      # ── 📦 বিল্ড করা ছোট APK ফাইলগুলো সরাসরি রিলিজ সেকশনে পুশ ──
+      - name: Push APK to GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "build/app/outputs/flutter-apk/app-*.apk"
+          tag: "v1.0.${{ github.run_number }}"
+          name: "oTtking App Release v1.0.${{ github.run_number }}"
+          body: |
+            Automated production build for oTtking App.
+            
+            **Build Optimization Details:**
+            - **Target SDK:** Android 34
+            - **Size Reduction:** Maximum Small Size (Split APKs per ABI Enabled)
+            - **Code Obfuscation:** Enabled (`--obfuscate`)
+            - **Debug Symbols:** Stripped (`--split-debug-info`)
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          draft: false
+          prerelease: false
