@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app.dart';
-import 'package:ottking_app/core/constants/app_constants.dart'; // (আপনার pubspec.yaml এর name অনুযায়ী)
+import 'package:ottking_app/core/constants/app_constants.dart'; 
 import 'data/repositories/live_tv_repository.dart';
 import 'data/services/device_mode_service.dart';
 import 'data/services/encryption_service.dart';
@@ -25,7 +25,12 @@ Future<void> main() async {
     baseUrl: AppConstants.defaultApiBaseUrl,
   );
 
-  final repository = LiveTvRepository(apiClient: apiClient);
+  // ── 🎯 ফিক্সড লাইন: এখানে secureStorage পাস করা হলো ──
+  final repository = LiveTvRepository(
+    apiClient: apiClient,
+    secureStorage: secureStorage, // <--- এই মিসিং প্যারামিটারটি যুক্ত করা হলো
+  );
+  
   final appState = AppState(
     repository: repository,
     prefs: prefs,
