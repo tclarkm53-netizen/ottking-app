@@ -33,9 +33,19 @@ class _SplashScreenState extends State<SplashScreen>
     Future.delayed(AppConstants.splashDuration, _navigate);
   }
 
-  void _navigate() {
+  Future<void> _navigate() async {
     if (!mounted) return;
     final appState = context.read<AppState>();
+
+    // Bootstrap এখনো শেষ না হলে অপেক্ষা করো
+    if (appState.isLoading) {
+      await Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 100));
+        return appState.isLoading;
+      });
+    }
+
+    if (!mounted) return;
     Navigator.pushReplacementNamed(
       context,
       appState.shouldBootToPlayer() ? '/player' : '/home',
