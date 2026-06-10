@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/models/channel_model.dart';
 import '../../data/repositories/live_tv_repository.dart';
-import '../../data/services/device_mode_service.dart';
 import '../../data/services/secure_storage_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -15,18 +14,15 @@ class AppState extends ChangeNotifier {
     required this.repository,
     required this.prefs,
     required this.secureStorage,
-    required this.deviceModeService,
   });
 
   final LiveTvRepository repository;
   final SharedPreferences prefs;
   final SecureStorageService secureStorage;
-  final DeviceModeService deviceModeService;
 
-  // ── State ─────────────────────────────────────────────────────────────────
+  // ── State ──────────────────────────────────────────────────────────────────
 
   bool isLoading = true;
-  bool isSmartTv = false;
   bool bootToPlayer = false;
   ThemeMode themeMode = ThemeMode.dark;
   String errorMessage = '';
@@ -39,10 +35,10 @@ class AppState extends ChangeNotifier {
   int _currentChannelIndex = 0;
   int get currentChannelIndex => _currentChannelIndex;
 
-  /// Directly sets the active channel index (used by HomeScreen grid tap).
   set currentChannelIndex(int value) {
     if (channels.isEmpty) return;
     _currentChannelIndex = value.clamp(0, channels.length - 1);
+    _saveLastChannelId(channels[_currentChannelIndex].id);
     notifyListeners();
   }
 
@@ -54,35 +50,24 @@ class AppState extends ChangeNotifier {
 
   Timer? _toastTimer;
 
-  // ── Bootstrap ─────────────────────────────────────────────────────────────
+  // ── Bootstrap ──────────────────────────────────────────────────────────────
 
   Future<void> bootstrap() async {
-    // থিম এবং বুট সেটিংস লোড
-    themeMode = prefs.getString('themeMode') == 'light'
+    themeMode = prefs.getString(AppConstants.keyThemeMode) == 'light'
         ? ThemeMode.light
         : ThemeMode.dark;
-    bootToPlayer = prefs.getBool('bootToPlayer') ?? false;
 
-    // ইউজার সেশন চেক
+    bootToPlayer = prefs.getBool(AppConstants.keyBootToPlayer) ?? false;
+
     isAuthenticated = await secureStorage.hasUserSession();
     userProfile = await secureStorage.readUserProfile();
 
-    // ক্যাটালগ ডাটা লোড
     await loadCatalog();
     isLoading = false;
     notifyListeners();
   }
 
-  // ── Smart TV Mode Setup ──
-  Future<void> updateDeviceMode(BuildContext context) async {
-    final bool detectedTv = await deviceModeService.isSmartTv(context);
-    if (isSmartTv != detectedTv) {
-      isSmartTv = detectedTv;
-      notifyListeners();
-    }
-  }
-
-  // ── Catalog ───────────────────────────────────────────────────────────────
+  // ── Catalog ────────────────────────────────────────────────────────────────
 
   Future<void> loadCatalog() async {
     try {
@@ -91,9 +76,16 @@ class AppState extends ChangeNotifier {
       categories = catalog.categories;
       banners = catalog.banners;
       plans = catalog.plans;
-      if (_currentChannelIndex >= channels.length) {
-        _currentChannelIndex = 0;
+
+      // Restore last played channel
+      final lastId = prefs.getString(AppConstants.keyLastChannelId);
+      if (lastId != null) {
+        final idx = channels.indexWhere((c) => c.id == lastId);
+        _currentChannelIndex = idx >= 0 ? idx : 0;
+      } else {
+        if (_currentChannelIndex >= channels.length) _currentChannelIndex = 0;
       }
+
       errorMessage = '';
     } catch (e) {
       channels = [];
@@ -105,38 +97,32 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Theme ─────────────────────────────────────────────────────────────────
+  // ── Boot Player ────────────────────────────────────────────────────────────
+
+  /// Returns true when app should go directly to player on boot.
+  bool shouldBootToPlayer() => bootToPlayer && channels.isNotEmpty;
+
+  Future<void> setBootToPlayer(bool enabled) async {
+    bootToPlayer = enabled;
+    await prefs.setBool(AppConstants.keyBootToPlayer, enabled);
+    notifyListeners();
+  }
+
+  void togglePlayerBoot() => setBootToPlayer(!bootToPlayer);
+  bool get isPlayerBootEnabled => bootToPlayer;
+
+  // ── Theme ──────────────────────────────────────────────────────────────────
 
   void toggleTheme() {
-    themeMode =
-        themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    themeMode = themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     prefs.setString(
-      'themeMode',
+      AppConstants.keyThemeMode,
       themeMode == ThemeMode.light ? 'light' : 'dark',
     );
     notifyListeners();
   }
 
-  // ── Smart TV boot & Player Screen compatibility ───────────────────────────
-
-  Future<void> setBootToPlayer(bool enabled) async {
-    bootToPlayer = enabled;
-    await prefs.setBool('bootToPlayer', enabled);
-    notifyListeners();
-  }
-
-  // Player Screen-এ ব্যবহৃত গেটার ম্যাপিং
-  bool get isPlayerBootEnabled => bootToPlayer;
-
-  // Player Screen-এর সেটিংস ডায়ালগ থেকে কল করা টগল ফাংশন
-  void togglePlayerBoot() {
-    setBootToPlayer(!bootToPlayer);
-  }
-
-  bool shouldBootToPlayer() =>
-      isSmartTv && bootToPlayer && channels.isNotEmpty;
-
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ───────────────────────────────────────────────────────────────────
 
   Future<void> login(String email, String password) async {
     errorMessage = '';
@@ -144,9 +130,7 @@ class AppState extends ChangeNotifier {
     try {
       final res = await repository.authenticate(email, password);
       await _handleAuthResponse(res, email);
-      
-      // লগইন সফল হওয়ার পর তৎক্ষণাৎ নতুন প্রিমিয়াম ক্যাটালগ লোড করা হলো
-      await loadCatalog(); 
+      await loadCatalog();
     } catch (e) {
       errorMessage = e.toString();
     }
@@ -159,8 +143,6 @@ class AppState extends ChangeNotifier {
     try {
       final res = await repository.register(email, password);
       await _handleAuthResponse(res, email);
-      
-      // রেজিস্ট্রেশন সফল হওয়ার পর তৎক্ষণাৎ নতুন ক্যাটালগ লোড করা হলো
       await loadCatalog();
     } catch (e) {
       errorMessage = e.toString();
@@ -169,9 +151,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _handleAuthResponse(
-    Map<String, dynamic> res,
-    String fallbackEmail,
-  ) async {
+      Map<String, dynamic> res, String fallbackEmail) async {
     final token = res['token'] as String? ?? 'demo-token';
     final profile = UserProfileModel(
       email: res['email'] as String? ?? fallbackEmail,
@@ -188,33 +168,38 @@ class AppState extends ChangeNotifier {
     await secureStorage.clearSession();
     isAuthenticated = false;
     userProfile = null;
-    
-    // লগআউট করার পর প্রিমিয়াম চ্যানেলগুলো সরিয়ে আবার নরমাল ফ্রি ক্যাটালগ লোড করা হলো
     _currentChannelIndex = 0;
-    await loadCatalog(); 
-    
+    await loadCatalog();
     notifyListeners();
   }
 
-  // ── Channel switching ─────────────────────────────────────────────────────
+  // ── Channel Switching ──────────────────────────────────────────────────────
 
+  /// Switches by direction (+1 or -1). Always switches regardless of
+  /// whether the current channel has an error — error handling is in the player.
   void switchChannel(int direction) {
     if (channels.isEmpty) return;
-
     _currentChannelIndex =
-        (_currentChannelIndex + direction) % channels.length;
-    if (_currentChannelIndex < 0) {
-      _currentChannelIndex = channels.length - 1;
-    }
-
+        (_currentChannelIndex + direction + channels.length) % channels.length;
+    _saveLastChannelId(channels[_currentChannelIndex].id);
     _showChannelToast(channels[_currentChannelIndex].name);
   }
 
+  void selectChannelByIndex(int index) {
+    if (channels.isEmpty) return;
+    _currentChannelIndex = index.clamp(0, channels.length - 1);
+    _saveLastChannelId(channels[_currentChannelIndex].id);
+    _showChannelToast(channels[_currentChannelIndex].name);
+  }
+
+  void _saveLastChannelId(String id) {
+    prefs.setString(AppConstants.keyLastChannelId, id);
+  }
+
   void _showChannelToast(String channelName) {
-    toastMessage = 'Now playing $channelName';
+    toastMessage = channelName;
     showToast = true;
     notifyListeners();
-
     _toastTimer?.cancel();
     _toastTimer = Timer(AppConstants.toastDuration, () {
       showToast = false;
@@ -222,15 +207,7 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  // ── নম্বর দিয়ে সরাসরি চ্যানেল সিলেক্ট করার মেথড ─────────────────────────
-  void selectChannelByIndex(int index) {
-    if (channels.isEmpty) return;
-    
-    _currentChannelIndex = index.clamp(0, channels.length - 1);
-    _showChannelToast(channels[_currentChannelIndex].name);
-  }
-  
-  // ── Current channel ───────────────────────────────────────────────────────
+  // ── Current Channel ────────────────────────────────────────────────────────
 
   static final ChannelModel _fallbackChannel = ChannelModel(
     id: 'fallback',
@@ -240,7 +217,7 @@ class AppState extends ChangeNotifier {
     logoUrl: '',
     description: 'Secure preview channel',
     quality: 'HD',
-    isPremium: 0, 
+    isPremium: 0,
   );
 
   ChannelModel get currentChannel =>
@@ -248,7 +225,7 @@ class AppState extends ChangeNotifier {
 
   String get currentChannelName => currentChannel.name;
 
-  // ── Dispose ───────────────────────────────────────────────────────────────
+  // ── Dispose ────────────────────────────────────────────────────────────────
 
   @override
   void dispose() {
