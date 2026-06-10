@@ -1,11 +1,11 @@
-// lib/presentation/screens/player_screen.dart
-// ✅ YOUR ORIGINAL PLAYER CODE WITH ONLY COMPILATION ERRORS FIXED
-
+// ✅ FULL PRODUCTION READY PLAYER SCREEN — MATCHING YOUR LATEST DESIGN
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../providers/app_state.dart';
 
 class PlayerScreen extends StatefulWidget {
@@ -15,182 +15,573 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
-  final FocusNode _playerFocusNode = FocusNode(debugLabel: 'player-root');
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'player-root');
+
+  VideoPlayerController? _controller;
+  VoidCallback? _controllerListener;
+  String? _activeChannelId;
+
+  bool _showControls = true;
+  bool _isLoading = false;
+
+  AppState? _appState;
+
+  Timer? _controlsTimer;
+  Timer? _numberInputTimer;
+  Timer? _retryTimer;
+
+  String _typedChannelNumber = "";
+  int _retryCount = 0;
+  static const int _maxRetry = 3;
 
   @override
-  void dispose() {
-    _playerFocusNode.dispose();
-    super.dispose();
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _enforceWakelock();
+      if (_controller?.value.hasError == true) {
+        _retryCount = 0;
+        _initController();
+      }
+    } else if (state == AppLifecycleState.paused) {
+      _controller?.pause();
+    }
   }
 
-  // ── 🎯 ফিক্সড লাইন ৩২৩: 'logicalKeyboardKey' এর বদলে সঠিক 'logicalKey' ──
-  void _handleKeyEvent(KeyEvent event, AppState appState) {
-    if (event is! KeyDownEvent) return;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
-    final key = event.logicalKey; // ✅ আপনার আগের লজিক ঠিক রেখে এরর ফিক্স করা হলো
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
 
-    if (key == LogicalKeyboardKey.escape || key == LogicalKeyboardKey.goBack) {
-      Navigator.pop(context);
+    _enforceWakelock();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _appState = Provider.of<AppState>(context, listen: false);
+        _initController();
+        _startControlsTimer();
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _appState = context.watch<AppState>();
+  }
+
+  Future<void> _enforceWakelock() async {
+    try {
+      await WakelockPlus.enable();
+      await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } catch (e) {
+      debugPrint("Wakelock error: $e");
+    }
+  }
+
+  void _startControlsTimer() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _showControls && _typedChannelNumber.isEmpty) {
+        setState(() => _showControls = false);
+      }
+    });
+  }
+
+  void _toggleControlsVisibility() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startControlsTimer();
+  }
+
+  void _disposeControllerInBackground(VideoPlayerController old, VoidCallback? listener) {
+    Future(() async {
+      try {
+        if (listener != null) old.removeListener(listener);
+        await old.setVolume(0.0);
+        if (old.value.isPlaying) await old.pause();
+      } catch (_) {} finally {
+        old.dispose();
+      }
+    });
+  }
+
+  Future<void> _initController() async {
+    if (!mounted || _appState == null) return;
+
+    final channel = _appState!.currentChannel;
+
+    if (_activeChannelId == channel.id &&
+        _controller != null &&
+        _controller!.value.isInitialized &&
+        !_controller!.value.hasError) {
       return;
     }
 
-    if (key == LogicalKeyboardKey.arrowUp) {
-      appState.switchChannel(1);
-    } else if (key == LogicalKeyboardKey.arrowDown) {
-      appState.switchChannel(-1);
+    setState(() {
+      _isLoading = true;
+      _activeChannelId = channel.id;
+    });
+
+    if (_controller != null) {
+      final oldCtrl = _controller!;
+      final oldListener = _controllerListener;
+      _controller = null;
+      _controllerListener = null;
+      _disposeControllerInBackground(oldCtrl, oldListener);
     }
+
+    final newController = VideoPlayerController.networkUrl(
+      Uri.parse(channel.streamUrl),
+      videoPlayerOptions: const VideoPlayerOptions(
+        allowBackgroundPlayback: false,
+        mixWithOthers: false,
+      ),
+      httpHeaders: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36',
+        'Accept': '*/*',
+      },
+    );
+
+    try {
+      await newController.initialize().timeout(const Duration(seconds: 20));
+      if (!mounted) {
+        newController.dispose();
+        return;
+      }
+
+      await newController.play();
+      _enforceWakelock();
+
+      _controllerListener = _onControllerUpdate;
+      newController.addListener(_controllerListener!);
+
+      _retryCount = 0;
+
+      if (mounted) {
+        setState(() {
+          _controller = newController;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Player init error: $e");
+      newController.dispose();
+      _handleLoadError(channel.name);
+    }
+  }
+
+  void _onControllerUpdate() {
+    if (!mounted) return;
+    final ctrl = _controller;
+    if (ctrl == null) return;
+
+    if (ctrl.value.hasError) {
+      _scheduleRetry();
+      return;
+    }
+    setState(() {});
+  }
+
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    if (_retryCount >= _maxRetry) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    _retryCount++;
+    if (mounted) setState(() => _isLoading = true);
+
+    _retryTimer = Timer(Duration(seconds: _retryCount * 2), () {
+      if (mounted) {
+        setState(() => _activeChannelId = null);
+        _initController();
+      }
+    });
+  }
+
+  void _handleLoadError(String channelName) {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _activeChannelId = null;
+    });
+
+    if (_retryCount < _maxRetry) {
+      _scheduleRetry();
+    }
+  }
+
+  void _safeChannelSwitch(int direction) {
+    if (_appState == null) return;
+
+    _retryTimer?.cancel();
+    _retryCount = 0;
+
+    setState(() {
+      _showControls = true;
+      _isLoading = true;
+      _activeChannelId = null;
+    });
+    _startControlsTimer();
+
+    if (_controller != null) {
+      final oldCtrl = _controller!;
+      final oldListener = _controllerListener;
+      _controller = null;
+      _controllerListener = null;
+      _disposeControllerInBackground(oldCtrl, oldListener);
+    }
+
+    _appState!.switchChannel(direction);
+
+    Future.microtask(() {
+      if (mounted) _initController();
+    });
+  }
+
+  void _switchToSpecificChannelNumber(int targetNumber) {
+    if (_appState == null) return;
+
+    final allChannels = _appState!.channels;
+    final targetIndex = targetNumber - 1;
+
+    if (targetIndex >= 0 && targetIndex < allChannels.length) {
+      _retryTimer?.cancel();
+      _retryCount = 0;
+
+      setState(() {
+        _showControls = true;
+        _isLoading = true;
+        _activeChannelId = null;
+      });
+
+      if (_controller != null) {
+        final oldCtrl = _controller!;
+        final oldListener = _controllerListener;
+        _controller = null;
+        _controllerListener = null;
+        _disposeControllerInBackground(oldCtrl, oldListener);
+      }
+
+      _appState!.selectChannelByIndex(targetIndex);
+
+      Future.microtask(() {
+        if (mounted) _initController();
+      });
+    }
+  }
+
+  void _handleNumberInput(String number) {
+    _numberInputTimer?.cancel();
+    setState(() {
+      _showControls = true;
+      _typedChannelNumber += number;
+    });
+
+    _numberInputTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && _typedChannelNumber.isNotEmpty) {
+        final targetNum = int.tryParse(_typedChannelNumber);
+        if (targetNum != null) _switchToSpecificChannelNumber(targetNum);
+        setState(() => _typedChannelNumber = "");
+        _startControlsTimer();
+      }
+    });
+  }
+
+  void _handleKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+
+    final keyLabel = event.logicalKey.keyLabel;
+
+    if (RegExp(r'^[0-9]$').hasMatch(keyLabel)) {
+      _handleNumberInput(keyLabel);
+      return;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _safeChannelSwitch(-1);
+      return;
+    } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _safeChannelSwitch(1);
+      return;
+    }
+
+    if (!_showControls) {
+      setState(() => _showControls = true);
+      _startControlsTimer();
+      return;
+    }
+
+    _startControlsTimer();
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+        event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.goBack) {
+      _exitPlayer();
+    } else if (event.logicalKey == LogicalKeyboardKey.space ||
+        event.logicalKey == LogicalKeyboardKey.enter) {
+      _togglePlayPause();
+    }
+  }
+
+  void _togglePlayPause() {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized || _isLoading) return;
+
+    setState(() {
+      if (ctrl.value.isPlaying) {
+        ctrl.pause();
+      } else {
+        ctrl.play();
+        _enforceWakelock();
+      }
+    });
+  }
+
+  void _exitPlayer() async {
+    _controlsTimer?.cancel();
+    _numberInputTimer?.cancel();
+    _retryTimer?.cancel();
+
+    try {
+      await WakelockPlus.disable();
+      await _controller?.pause();
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    Navigator.pushReplacementNamed(context, '/home');
   }
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
-    
-    if (appState.channels.isEmpty) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: Text('No channels available', style: TextStyle(color: Colors.white))),
-      );
-    }
+    if (_appState == null) return const Scaffold(backgroundColor: Colors.black);
 
-    final currentChannel = appState.channels[appState.currentChannelIndex];
-
-    // ── 🎯 ফিক্সড লাইন ৫১০: ChannelModel এ গেটার না থাকায় সরাসরি ফলব্যাক লজিক ──
-    final bool isPremiumChannel = false; // ✅ মডেল ক্র্যাশ ফিক্স
+    final currentChannel = _appState!.currentChannel;
+    final controller = _controller;
+    final initialized = controller != null && controller.value.isInitialized;
 
     return KeyboardListener(
-      focusNode: _playerFocusNode,
+      focusNode: _focusNode,
       autofocus: true,
-      onKeyEvent: (event) => _handleKeyEvent(event, appState),
+      onKeyEvent: _handleKey,
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            
-            // ── 🎯 আপনার অরিজিনাল ভিডিও প্লেয়ার বাফার/কন্ট্রোলার সেকশন ──
-            // এখানে আপনার আগের আসল ভিডিও স্ট্রিম উইজেটটি থাকবে (যা আমি আগেরবার ভুলে মুছে দিয়েছিলাম)
-            Center(
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Container(
-                  color: const Color(0xFF020617),
-                  child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (appState.isLoading)
-                          const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF06B6D4)))
-                        else
-                          const Icon(Icons.play_circle_filled_rounded, size: 74, color: Color(0xFF06B6D4)),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Playing: ${currentChannel.name}', 
-                          style: const TextStyle(color: Colors.white70, fontSize: 16),
-                        ),
-                      ],
+        body: GestureDetector(
+          onTap: _toggleControlsVisibility,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // ভিডিও লেয়ার
+              if (initialized && !_isLoading)
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: SizedBox(
+                      width: controller.value.size.width,
+                      height: controller.value.size.height,
+                      child: VideoPlayer(controller),
                     ),
                   ),
+                )
+              else
+                const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
                 ),
-              ),
-            ),
 
-            // ── 🎯 আপনার অরিজিনাল ওএসডি / কন্ট্রোল ওভারলে ইন্টারফেস ──
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.transparent, Colors.black.withOpacity(0.95)],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
+              // টপ বার (চ্যানেল নাম + সেটিংস)
+              if (_showControls)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          if (currentChannel.logoUrl.trim().isNotEmpty)
-                            Container(
-                              height: 60, width: 60,
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Image.network(
-                                currentChannel.logoUrl.trim(),
-                                fit: BoxFit.contain,
-                                // ── 🎯 ফিক্সড: 'white50' এর বদলে সঠিক 'white54' ──
-                                errorBuilder: (c, e, s) => const Icon(Icons.live_tv_rounded, color: Colors.white54),
-                              ),
-                            )
-                          else
-                            Container(
-                              height: 60, width: 60,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.08),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              // ── 🎯 ফিক্সড: 'white50' এর বদলে সঠিক 'white54' ──
-                              child: const Icon(Icons.live_tv_rounded, color: Colors.white54, size: 36),
+                          // বামে চ্যানেল নাম কার্ড
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.75),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text(
-                                  currentChannel.name,
-                                  style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'LIVE',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Category: ${currentChannel.category}  •  Quality: ${currentChannel.quality.toUpperCase()}',
-                                  style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+                                const SizedBox(width: 12),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      currentChannel.name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      currentChannel.quality.toUpperCase(),
+                                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ),
+
+                          // ডানে সেটিংস আইকন
+                          IconButton(
+                            icon: const Icon(Icons.settings, color: Colors.white, size: 28),
+                            onPressed: () => Navigator.pushNamed(context, '/settings'),
+                          ),
                         ],
                       ),
                     ),
+                  ),
+                ),
 
-                    // ── 🎯 ফিক্সড লাইন ৪০৮ ও ৪১২: 'const' রিমুভ এবং সঠিক আইকন অ্যাসাইন ──
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white10, width: 1), // ✅ FIXED: const Removed
+              // নাম্বার ইনপুট ওভারলে (টপ লেফটের কাছে)
+              if (_typedChannelNumber.isNotEmpty)
+                Positioned(
+                  top: 110,
+                  left: 40,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.redAccent, width: 3),
+                    ),
+                    child: Text(
+                      _typedChannelNumber,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 68,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 6,
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                  ),
+                ),
+
+              // বটম চ্যানেল ডিটেইলস বার (টিভি রিসিভার স্টাইল)
+              if (_showControls)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black.withOpacity(0.95), Colors.transparent],
+                      ),
+                    ),
+                    child: SafeArea(
+                      top: false,
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.settings_remote_rounded, // ✅ FIXED: tv_settings_rounded to settings_remote_rounded
-                            color: Color(0xFF06B6D4), 
-                            size: 24,
+                          // চ্যানেল লোগো
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: currentChannel.logoUrl.trim().isNotEmpty
+                                ? Image.network(
+                                    currentChannel.logoUrl,
+                                    width: 52,
+                                    height: 52,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(Icons.live_tv_rounded, color: Colors.white54, size: 52),
+                                  )
+                                : const Icon(Icons.live_tv_rounded, color: Colors.white54, size: 52),
                           ),
-                          const SizedBox(width: 8),
+
+                          const SizedBox(width: 20),
+
+                          // ডিটেইলস
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  currentChannel.name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "${currentChannel.category} • ${currentChannel.quality.toUpperCase()}",
+                                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // সময়
                           Text(
-                            'D-Pad: CH ${appState.currentChannelIndex + 1}',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                            TimeOfDay.now().format(context),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ],
                       ),
                     ),
-
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _controlsTimer?.cancel();
+    _numberInputTimer?.cancel();
+    _retryTimer?.cancel();
+    WakelockPlus.disable();
+    if (_controller != null && _controllerListener != null) {
+      _controller!.removeListener(_controllerListener!);
+    }
+    _controller?.dispose();
+    _focusNode.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }
