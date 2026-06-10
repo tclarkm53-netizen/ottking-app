@@ -1,9 +1,11 @@
 // lib/presentation/screens/settings_screen.dart
+// TV-only settings — always landscape
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -14,19 +16,29 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final FocusNode _focusNode = FocusNode(debugLabel: 'settings-root');
+  final FocusNode _root = FocusNode(debugLabel: 'settings-root');
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _root.dispose();
     super.dispose();
   }
 
-  void _handleKey(KeyEvent event) {
-    if (event is! KeyDownEvent) return;
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+  void _handleKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return;
+    if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
       FocusScope.of(context).nextFocus();
-    } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+    } else if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
       FocusScope.of(context).previousFocus();
     }
   }
@@ -34,257 +46,239 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final theme = Theme.of(context);
-
-    final isTV = MediaQuery.of(context).size.width > 800 && 
-                 MediaQuery.of(context).orientation == Orientation.landscape;
 
     return KeyboardListener(
-      focusNode: _focusNode,
+      focusNode: _root,
       onKeyEvent: _handleKey,
       child: Scaffold(
         backgroundColor: const Color(0xFF0B0F19),
-        appBar: AppBar(
-          backgroundColor: const Color(0xFF0B0F19),
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Text(
-            isTV ? 'oTtking সেটিংস' : 'Settings',
-            style: TextStyle(
-              fontSize: isTV ? 26 : 22, 
-              fontWeight: FontWeight.bold, 
-              color: Colors.white,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        body: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.symmetric(
-            horizontal: isTV ? 48 : 20, 
-            vertical: 20,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (appState.isAuthenticated && appState.userProfile != null) ...[
-                _SectionTitle(title: isTV ? 'অ্যাকাউন্ট এবং অ্যাক্সেস' : 'Account & Access', isTV: isTV),
-                const SizedBox(height: 14),
-                _AccountInfoCard(profile: appState.userProfile!, isTV: isTV),
-                const SizedBox(height: 24),
-              ],
-
-              _SectionTitle(title: isTV ? 'সাধারণ সেটিংস' : 'General Settings', isTV: isTV),
-              const SizedBox(height: 12),
-              _buildGridOrColumn(
-                isTV: isTV,
-                children: [
-                  _SettingsTile(
-                    isTV: isTV,
-                    title: 'App Theme',
-                    subtitle: appState.themeMode == ThemeMode.dark ? 'Dark Mode Active' : 'Light Mode Active',
-                    icon: appState.themeMode == ThemeMode.dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                    onTap: appState.toggleTheme,
-                  ),
-                  if (appState.isSmartTv)
-                    _SettingsTile(
-                      isTV: isTV,
-                      title: 'Direct Player Boot',
-                      subtitle: appState.bootToPlayer ? 'Enabled' : 'Disabled',
-                      icon: Icons.tv_rounded,
-                      trailing: Switch(
-                        value: appState.bootToPlayer,
-                        activeColor: const Color(0xFF06B6D4),
-                        onChanged: (val) => appState.setBootToPlayer(val),
+        body: Row(
+          children: [
+            // Left sidebar nav
+            Container(
+              width: 260,
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                border: Border(
+                    right: BorderSide(color: AppTheme.border, width: 1)),
+              ),
+              child: SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                                color: Colors.white70, size: 18),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                          const Text(
+                            'সেটিংস',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                      onTap: () => appState.setBootToPlayer(!appState.bootToPlayer),
                     ),
-                  _SettingsTile(
-                    isTV: isTV,
-                    title: appState.isAuthenticated ? 'Account Session' : 'Account Login',
-                    subtitle: appState.isAuthenticated ? 'Tap to switch account or logout' : 'Sign in to access premium channels',
-                    icon: Icons.account_circle_rounded,
-                    onTap: () => showDialog(
-                      context: context,
-                      builder: (_) => const AuthOverlayDialog(),
+                    const SizedBox(height: 32),
+                    _NavItem(
+                        icon: Icons.account_circle_rounded,
+                        label: 'অ্যাকাউন্ট'),
+                    _NavItem(
+                        icon: Icons.tv_rounded, label: 'TV সেটিংস'),
+                    _NavItem(
+                        icon: Icons.card_membership_rounded,
+                        label: 'সাবস্ক্রিপশন'),
+                    _NavItem(
+                        icon: Icons.sync_rounded,
+                        label: 'ক্যাটালগ রিফ্রেশ'),
+                    const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        'v1.0.0  |  Smart TV',
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.2),
+                            fontSize: 12),
+                      ),
                     ),
-                  ),
-                  _SettingsTile(
-                    isTV: isTV,
-                    title: 'Subscription Plans',
-                    subtitle: 'Explore active packages & pricing',
-                    icon: Icons.card_membership_rounded,
-                    onTap: () => _showSubscriptions(context, appState.plans),
-                  ),
-                ],
+                  ],
+                ),
               ),
+            ),
 
-              const SizedBox(height: 24),
+            // Main content
+            Expanded(
+              child: SafeArea(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 48, vertical: 32),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // ── Account ──────────────────────────────────────────
+                      if (appState.isAuthenticated &&
+                          appState.userProfile != null) ...[
+                        _SectionHeader(title: 'অ্যাকাউন্ট'),
+                        const SizedBox(height: 16),
+                        _AccountCard(profile: appState.userProfile!),
+                        const SizedBox(height: 32),
+                      ],
 
-              _SectionTitle(title: isTV ? 'সাপোর্ট এবং সিস্টেম' : 'Support & System', isTV: isTV),
-              const SizedBox(height: 12),
-              _buildGridOrColumn(
-                isTV: isTV,
-                children: [
-                  _SettingsTile(
-                    isTV: isTV,
-                    title: 'Refresh Catalog',
-                    subtitle: 'Force update channel live streams',
-                    icon: Icons.sync_rounded,
-                    onTap: () {
-                      appState.loadCatalog();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Refreshing channel catalog...'),
-                          backgroundColor: Color(0xFF1E293B),
+                      // ── TV Settings ──────────────────────────────────────
+                      _SectionHeader(title: 'Smart TV সেটিংস'),
+                      const SizedBox(height: 16),
+                      _TvGrid(children: [
+                        // Boot Player toggle — KEY FEATURE
+                        _SettingCard(
+                          icon: Icons.rocket_launch_rounded,
+                          title: 'Boot Player',
+                          subtitle: appState.bootToPlayer
+                              ? 'চালু — অ্যাপ খুললেই লাইভ টিভি শুরু হবে'
+                              : 'বন্ধ — হোম পেজে যাবে',
+                          trailing: Switch(
+                            value: appState.bootToPlayer,
+                            activeColor: AppTheme.primary,
+                            onChanged: (v) => appState.setBootToPlayer(v),
+                          ),
+                          onTap: () => appState
+                              .setBootToPlayer(!appState.bootToPlayer),
+                          highlight: appState.bootToPlayer,
                         ),
-                      );
-                    },
-                  ),
-                  _SettingsTile(
-                    isTV: isTV,
-                    title: 'Customer Support',
-                    subtitle: 'Get assistance regarding your stream',
-                    icon: Icons.support_agent_rounded,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Connecting to support desk...'),
-                          backgroundColor: Color(0xFF1E293B),
+                        _SettingCard(
+                          icon: Icons.palette_rounded,
+                          title: 'থিম',
+                          subtitle: appState.themeMode == ThemeMode.dark
+                              ? 'Dark Mode'
+                              : 'Light Mode',
+                          onTap: appState.toggleTheme,
                         ),
-                      );
-                    },
+                        _SettingCard(
+                          icon: Icons.account_circle_rounded,
+                          title: appState.isAuthenticated
+                              ? 'অ্যাকাউন্ট'
+                              : 'লগইন করুন',
+                          subtitle: appState.isAuthenticated
+                              ? 'অ্যাকাউন্ট পরিচালনা করুন'
+                              : 'প্রিমিয়াম চ্যানেল পেতে লগইন করুন',
+                          onTap: () => showDialog(
+                            context: context,
+                            builder: (_) => const AuthDialog(),
+                          ),
+                        ),
+                        _SettingCard(
+                          icon: Icons.sync_rounded,
+                          title: 'ক্যাটালগ রিফ্রেশ',
+                          subtitle: 'চ্যানেল লিস্ট আপডেট করুন',
+                          onTap: () {
+                            appState.loadCatalog();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text(
+                                    'চ্যানেল লিস্ট আপডেট হচ্ছে...'),
+                                backgroundColor: AppTheme.card,
+                              ),
+                            );
+                          },
+                        ),
+                        _SettingCard(
+                          icon: Icons.card_membership_rounded,
+                          title: 'সাবস্ক্রিপশন প্ল্যান',
+                          subtitle: 'প্যাকেজ ও মূল্য দেখুন',
+                          onTap: () => _showPlans(context, appState.plans),
+                        ),
+                      ]),
+
+                      const SizedBox(height: 32),
+
+                      // ── Status footer ─────────────────────────────────────
+                      _StatusFooter(appState: appState),
+                    ],
                   ),
-                ],
+                ),
               ),
-
-              const SizedBox(height: 32),
-              _buildStatusFooter(isTV, appState, theme),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildGridOrColumn({required bool isTV, required List<Widget> children}) {
-    if (isTV) {
-      return GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 2,
-        childAspectRatio: 3.8,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        children: children,
-      );
-    }
-    return Column(
-      children: children.map((w) => Padding(padding: const EdgeInsets.only(bottom: 12), child: w)).toList(),
-    );
-  }
-
-  Widget _buildStatusFooter(bool isTV, AppState appState, ThemeData theme) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF131B2E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.03)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 24,
-            runSpacing: 12,
-            children: [
-              _buildStatusBadge(
-                Icons.connected_tv_rounded, 
-                appState.isSmartTv ? 'Smart TV Mode Active' : 'Mobile Interface Active'
-              ),
-              _buildStatusBadge(
-                // FIXED: 'g_rounded' এর পরিবর্তে 'cloud_done_rounded' ব্যবহার করা হয়েছে
-                appState.errorMessage.isEmpty ? Icons.cloud_done_rounded : Icons.warning_amber_rounded,
-                appState.errorMessage.isEmpty ? 'Secure API Sync Active' : 'API Outage Detected',
-                color: appState.errorMessage.isEmpty ? const Color(0xFF06B6D4) : theme.colorScheme.error,
-              ),
-            ],
-          ),
-          if (appState.errorMessage.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              appState.errorMessage,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
-            ),
-          ]
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge(IconData icon, String text, {Color color = const Color(0xFF06B6D4)}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Text(text, style: const TextStyle(color: Colors.white60, fontSize: 13, fontWeight: FontWeight.w500)),
-      ],
-    );
-  }
-
-  void _showSubscriptions(BuildContext context, List<dynamic> plans) {
+  void _showPlans(BuildContext ctx, List plans) {
     showDialog(
-      context: context,
+      context: ctx,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF131B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Premium Packages', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: const Text('সাবস্ক্রিপশন প্ল্যান',
+            style:
+                TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: SizedBox(
-          width: 400,
+          width: 480,
           child: plans.isEmpty
-              ? const Text('No subscription plans published.', style: TextStyle(color: Colors.white54))
+              ? const Text('কোনো প্ল্যান পাওয়া যায়নি।',
+                  style: TextStyle(color: Colors.white54))
               : ListView.separated(
                   shrinkWrap: true,
                   itemCount: plans.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final plan = plans[index];
+                  separatorBuilder: (_, __) =>
+                      const SizedBox(height: 12),
+                  itemBuilder: (context, i) {
+                    final p = plans[i];
                     return Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: const Color(0xFF0B0F19),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white.withOpacity(0.04)),
+                        border: Border.all(
+                            color: Colors.white.withOpacity(0.05)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            // FIXED: 'between' এর পরিবর্তে 'spaceBetween' অবজেক্ট ব্যবহার করা হয়েছে
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(plan.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              Text(p.name,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16)),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF06B6D4).withOpacity(0.15), 
-                                  borderRadius: BorderRadius.circular(8)
+                                  color: AppTheme.primary.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text(plan.badge, style: const TextStyle(color: Color(0xFF06B6D4), fontSize: 11, fontWeight: FontWeight.bold)),
+                                child: Text(p.badge,
+                                    style: const TextStyle(
+                                        color: AppTheme.primary,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold)),
                               ),
                             ],
                           ),
                           const SizedBox(height: 6),
-                          Text(plan.price, style: const TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold, fontSize: 15)),
-                          const SizedBox(height: 6),
-                          Text(plan.description, style: const TextStyle(color: Colors.white60, fontSize: 13)),
+                          Text(p.price,
+                              style: const TextStyle(
+                                  color: AppTheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15)),
+                          const SizedBox(height: 4),
+                          Text(p.description,
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 13)),
                         ],
                       ),
                     );
@@ -293,8 +287,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold)),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('বন্ধ',
+                style: TextStyle(
+                    color: AppTheme.primary, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -302,83 +298,158 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-class _SettingsTile extends StatefulWidget {
-  final String title;
-  final String subtitle;
+// ── Helper Widgets ────────────────────────────────────────────────────────────
+
+class _NavItem extends StatelessWidget {
+  const _NavItem({required this.icon, required this.label});
   final IconData icon;
-  final Widget? trailing;
-  final VoidCallback onTap;
-  final bool isTV;
-
-  const _SettingsTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    this.trailing,
-    required this.onTap,
-    required this.isTV,
-  });
-
-  @override
-  State<_SettingsTile> createState() => _SettingsTileState();
-}
-
-class _SettingsTileState extends State<_SettingsTile> {
-  bool _isFocused = false;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ListTile(
+        leading: Icon(icon, color: Colors.white38, size: 20),
+        title: Text(label,
+            style: const TextStyle(color: Colors.white54, fontSize: 14)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title.toUpperCase(),
+      style: const TextStyle(
+        color: AppTheme.primary,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1.5,
+      ),
+    );
+  }
+}
+
+class _TvGrid extends StatelessWidget {
+  const _TvGrid({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: 2,
+      childAspectRatio: 4.0,
+      mainAxisSpacing: 14,
+      crossAxisSpacing: 14,
+      children: children,
+    );
+  }
+}
+
+class _SettingCard extends StatefulWidget {
+  const _SettingCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.trailing,
+    this.highlight = false,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Widget? trailing;
+  final bool highlight;
+
+  @override
+  State<_SettingCard> createState() => _SettingCardState();
+}
+
+class _SettingCardState extends State<_SettingCard> {
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _focused || widget.highlight;
     return InkWell(
       onTap: widget.onTap,
-      onFocusChange: (focus) => setState(() => _isFocused = focus),
-      borderRadius: BorderRadius.circular(16),
+      onFocusChange: (v) => setState(() => _focused = v),
+      borderRadius: BorderRadius.circular(14),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: _isFocused ? const Color(0xFF1E293B) : const Color(0xFF131B2E),
-          borderRadius: BorderRadius.circular(16),
+          color: active ? AppTheme.card : const Color(0xFF131B2E),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: _isFocused ? const Color(0xFF06B6D4) : Colors.white.withOpacity(0.02),
+            color: active ? AppTheme.primary : Colors.white.withOpacity(0.04),
             width: 1.5,
           ),
-          boxShadow: _isFocused 
-              ? [BoxShadow(color: const Color(0xFF06B6D4).withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))]
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: AppTheme.primary.withOpacity(0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  )
+                ]
               : [],
         ),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: _isFocused ? const Color(0xFF06B6D4).withOpacity(0.15) : const Color(0xFF0B0F19),
-                borderRadius: BorderRadius.circular(12),
+                color: active
+                    ? AppTheme.primary.withOpacity(0.15)
+                    : const Color(0xFF0B0F19),
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(widget.icon, color: _isFocused ? const Color(0xFF06B6D4) : Colors.white70, size: 22),
+              child: Icon(widget.icon,
+                  color: active ? AppTheme.primary : Colors.white54,
+                  size: 20),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    widget.title, 
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
+                    widget.title,
+                    style: TextStyle(
+                      color: active ? Colors.white : Colors.white70,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
                   Text(
-                    widget.subtitle, 
-                    style: const TextStyle(color: Colors.white38, fontSize: 12),
+                    widget.subtitle,
+                    style: const TextStyle(
+                        color: Colors.white38, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            widget.trailing ?? Icon(Icons.arrow_forward_ios_rounded, color: Colors.white24, size: widget.isTV ? 16 : 14),
+            widget.trailing ??
+                Icon(Icons.arrow_forward_ios_rounded,
+                    color: Colors.white24, size: 14),
           ],
         ),
       ),
@@ -386,60 +457,78 @@ class _SettingsTileState extends State<_SettingsTile> {
   }
 }
 
-class _AccountInfoCard extends StatelessWidget {
+class _AccountCard extends StatelessWidget {
+  const _AccountCard({required this.profile});
   final dynamic profile;
-  final bool isTV;
-
-  const _AccountInfoCard({required this.profile, required this.isTV});
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.read<AppState>();
     return Container(
-      width: isTV ? MediaQuery.of(context).size.width * 0.48 : double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [const Color(0xFF1E293B), const Color(0xFF131B2E).withOpacity(0.8)],
+          colors: [AppTheme.card, const Color(0xFF131B2E).withOpacity(0.8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF06B6D4).withOpacity(0.2)),
+        border:
+            Border.all(color: AppTheme.primary.withOpacity(0.2)),
       ),
       child: Row(
         children: [
           CircleAvatar(
-            radius: 24,
-            backgroundColor: const Color(0xFF06B6D4).withOpacity(0.15),
+            radius: 28,
+            backgroundColor: AppTheme.primary.withOpacity(0.15),
             child: Text(
-              profile.email.isNotEmpty ? profile.email[0].toUpperCase() : '?',
-              style: const TextStyle(color: Color(0xFF06B6D4), fontWeight: FontWeight.bold, fontSize: 20),
+              profile.email.isNotEmpty
+                  ? profile.email[0].toUpperCase()
+                  : '?',
+              style: const TextStyle(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 22),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 18),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  profile.email, 
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 16),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(profile.email,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    const Icon(Icons.stars_rounded, color: Color(0xFFEAB308), size: 14),
+                    const Icon(Icons.stars_rounded,
+                        color: Color(0xFFEAB308), size: 14),
                     const SizedBox(width: 4),
-                    Text(
-                      'Plan: ${profile.plan}', 
-                      style: const TextStyle(color: Color(0xFFEAB308), fontSize: 12, fontWeight: FontWeight.w600)
-                    ),
+                    Text('প্ল্যান: ${profile.plan}',
+                        style: const TextStyle(
+                            color: Color(0xFFEAB308),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600)),
                   ],
                 ),
               ],
             ),
+          ),
+          TextButton.icon(
+            onPressed: () {
+              appState.logout();
+              Navigator.pop(context);
+            },
+            icon: const Icon(Icons.logout_rounded,
+                color: Colors.redAccent, size: 16),
+            label: const Text('লগআউট',
+                style: TextStyle(
+                    color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -447,94 +536,145 @@ class _AccountInfoCard extends StatelessWidget {
   }
 }
 
-class AuthOverlayDialog extends StatefulWidget {
-  const AuthOverlayDialog({super.key});
+class _StatusFooter extends StatelessWidget {
+  const _StatusFooter({required this.appState});
+  final AppState appState;
 
   @override
-  State<AuthOverlayDialog> createState() => _AuthOverlayDialogState();
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF131B2E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.03)),
+      ),
+      child: Row(
+        children: [
+          _Badge(
+            icon: Icons.connected_tv_rounded,
+            label: 'Smart TV Mode',
+            color: AppTheme.primary,
+          ),
+          const SizedBox(width: 24),
+          _Badge(
+            icon: appState.errorMessage.isEmpty
+                ? Icons.cloud_done_rounded
+                : Icons.warning_amber_rounded,
+            label: appState.errorMessage.isEmpty
+                ? 'API সংযোগ সচল'
+                : 'API সমস্যা',
+            color: appState.errorMessage.isEmpty
+                ? AppTheme.primary
+                : Colors.redAccent,
+          ),
+          const SizedBox(width: 24),
+          _Badge(
+            icon: Icons.live_tv_rounded,
+            label: '${appState.channels.length} চ্যানেল',
+            color: Colors.white54,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
+class _Badge extends StatelessWidget {
+  const _Badge(
+      {required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
+                fontWeight: FontWeight.w500)),
+      ],
+    );
+  }
+}
+
+// ─── Auth Dialog ──────────────────────────────────────────────────────────────
+
+class AuthDialog extends StatefulWidget {
+  const AuthDialog({super.key});
+
+  @override
+  State<AuthDialog> createState() => _AuthDialogState();
+}
+
+class _AuthDialogState extends State<AuthDialog> {
   bool _isRegister = false;
-  bool _isLoading = false;
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
+  bool _loading = false;
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
 
   @override
   void dispose() {
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
+    _email.dispose();
+    _pass.dispose();
     super.dispose();
   }
 
   Future<void> _submit(AppState appState) async {
-    if (_emailCtrl.text.trim().isEmpty || _passCtrl.text.isEmpty) return;
-    setState(() => _isLoading = true);
-
-    if (_isRegister) {
-      await appState.register(_emailCtrl.text.trim(), _passCtrl.text);
-    } else {
-      await appState.login(_emailCtrl.text.trim(), _passCtrl.text);
-    }
-
+    if (_email.text.trim().isEmpty || _pass.text.isEmpty) return;
+    setState(() => _loading = true);
+    _isRegister
+        ? await appState.register(_email.text.trim(), _pass.text)
+        : await appState.login(_email.text.trim(), _pass.text);
     if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (appState.errorMessage.isEmpty) {
-      Navigator.pop(context);
-    }
+    setState(() => _loading = false);
+    if (appState.errorMessage.isEmpty) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-
     return AlertDialog(
       backgroundColor: const Color(0xFF131B2E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Text(_isRegister ? 'Create Account' : 'Sign In Securely', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        _isRegister ? 'নতুন অ্যাকাউন্ট' : 'সাইন ইন',
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.bold),
+      ),
       content: SizedBox(
-        width: 360,
+        width: 400,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _emailCtrl,
-              keyboardType: TextInputType.emailAddress,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Email Address',
-                labelStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.email_outlined, color: Colors.white38),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.05))),
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF06B6D4))),
-              ),
-            ),
+            _Field(ctrl: _email, label: 'Email', icon: Icons.email_outlined),
             const SizedBox(height: 16),
-            TextField(
-              controller: _passCtrl,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: 'Password',
-                labelStyle: const TextStyle(color: Colors.white38),
-                prefixIcon: const Icon(Icons.lock_outline, color: Colors.white38),
-                enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white.withOpacity(0.05))),
-                focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Color(0xFF06B6D4))),
-              ),
-            ),
+            _Field(
+                ctrl: _pass,
+                label: 'Password',
+                icon: Icons.lock_outline,
+                obscure: true),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => setState(() => _isRegister = !_isRegister),
               child: Text(
-                _isRegister ? 'Already have an account? Sign In' : 'New to oTtking? Register here',
-                style: const TextStyle(color: Color(0xFF06B6D4)),
+                _isRegister
+                    ? 'ইতিমধ্যে অ্যাকাউন্ট আছে? সাইন ইন করুন'
+                    : 'নতুন অ্যাকাউন্ট তৈরি করুন',
+                style: const TextStyle(color: AppTheme.primary),
               ),
             ),
-            if (appState.errorMessage.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(appState.errorMessage, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 13)),
-            ],
+            if (appState.errorMessage.isNotEmpty)
+              Text(appState.errorMessage,
+                  style: const TextStyle(
+                      color: Colors.redAccent, fontSize: 13)),
           ],
         ),
       ),
@@ -545,42 +685,67 @@ class _AuthOverlayDialogState extends State<AuthOverlayDialog> {
               appState.logout();
               Navigator.pop(context);
             },
-            child: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+            child: const Text('লগআউট',
+                style: TextStyle(
+                    color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          child: const Text('বাতিল',
+              style: TextStyle(color: Colors.white38)),
         ),
         FilledButton(
-          onPressed: _isLoading ? null : () => _submit(appState),
+          onPressed: _loading ? null : () => _submit(appState),
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF06B6D4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            backgroundColor: AppTheme.primary,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
-          child: _isLoading
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
-              : Text(_isRegister ? 'Register' : 'Login', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+          child: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white)))
+              : Text(
+                  _isRegister ? 'রেজিস্ট্রেশন' : 'লগইন',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.black),
+                ),
         ),
       ],
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.title, required this.isTV});
-
-  final String title;
-  final bool isTV;
+class _Field extends StatelessWidget {
+  const _Field(
+      {required this.ctrl,
+      required this.label,
+      required this.icon,
+      this.obscure = false});
+  final TextEditingController ctrl;
+  final String label;
+  final IconData icon;
+  final bool obscure;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: isTV ? 16 : 14,
-        fontWeight: FontWeight.bold,
-        color: const Color(0xFF06B6D4),
-        letterSpacing: 0.8,
+    return TextField(
+      controller: ctrl,
+      obscureText: obscure,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white38),
+        prefixIcon: Icon(icon, color: Colors.white38),
+        enabledBorder: UnderlineInputBorder(
+            borderSide:
+                BorderSide(color: Colors.white.withOpacity(0.08))),
+        focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: AppTheme.primary)),
       ),
     );
   }
