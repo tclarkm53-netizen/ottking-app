@@ -9,18 +9,6 @@ import '../../core/constants/app_constants.dart';
 import '../providers/app_state.dart';
 import '../widgets/tv_focus_card.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// সমস্যার সমাধান:
-// 1. FocusScopeNode দিয়ে sidebar ও grid আলাদা focus zone
-// 2. প্রতিটি widget-এ explicit D-pad key handler (onKeyEvent)
-// 3. Category sidebar-এ up/down arrow navigation
-// 4. Channel grid-এ arrow navigation, Left চাপলে sidebar-এ ফেরা
-// 5. Back/Escape চাপলে Exit Confirmation dialog
-// 6. Settings button properly focusable ও selectable
-// ─────────────────────────────────────────────────────────────────────────────
-
-enum _FocusPanel { topBar, sidebar, grid }
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -29,78 +17,36 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
   int _selectedCategoryIndex = 0;
-  _FocusPanel _activePanel = _FocusPanel.sidebar;
 
   final List<FocusNode> _catNodes = [];
   final List<FocusNode> _chNodes = [];
-  final FocusNode _settingsFocusNode = FocusNode(debugLabel: 'settings-btn');
-  final FocusScopeNode _sidebarScope = FocusScopeNode(debugLabel: 'sidebar');
-  final FocusScopeNode _gridScope = FocusScopeNode(debugLabel: 'grid');
 
   @override
   void initState() {
     super.initState();
+    // Ensure landscape
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-
-    // App শুরুতে প্রথম category-তে focus দাও
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_catNodes.isNotEmpty) _catNodes[0].requestFocus();
-    });
   }
 
   @override
   void dispose() {
-    _settingsFocusNode.dispose();
-    _sidebarScope.dispose();
-    _gridScope.dispose();
+    _rootFocusNode.dispose();
     for (final n in _catNodes) n.dispose();
     for (final n in _chNodes) n.dispose();
     super.dispose();
   }
 
-  // ── Exit Confirmation ──────────────────────────────────────────────────────
-  Future<void> _showExitDialog() async {
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const _ExitDialog(),
-    );
-    if (shouldExit == true) {
-      await SystemChannels.platform.invokeMethod('SystemNavigator.pop');
-    }
-  }
-
-  // ── Global back key handler ────────────────────────────────────────────────
-  KeyEventResult _handleGlobalKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+  void _handleKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
     if (event.logicalKey == LogicalKeyboardKey.escape ||
-        event.logicalKey == LogicalKeyboardKey.goBack ||
-        event.logicalKey == LogicalKeyboardKey.browserBack) {
-      _showExitDialog();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  // ── Sidebar navigation helper ──────────────────────────────────────────────
-  void _moveCategoryFocus(int delta, int total) {
-    final next = (_selectedCategoryIndex + delta).clamp(0, total - 1);
-    if (next != _selectedCategoryIndex) {
-      setState(() => _selectedCategoryIndex = next);
-      _catNodes[next].requestFocus();
-    }
-  }
-
-  // ── Grid navigation helper ─────────────────────────────────────────────────
-  void _moveGridFocus(int currentIndex, int delta, int total, int crossCount) {
-    final next = currentIndex + delta;
-    if (next >= 0 && next < total) {
-      _chNodes[next].requestFocus();
+        event.logicalKey == LogicalKeyboardKey.goBack) {
+      SystemChannels.platform.invokeMethod('SystemNavigator.pop');
     }
   }
 
@@ -109,14 +55,13 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.watch<AppState>();
     final size = MediaQuery.of(context).size;
 
+    // Categories with "All" prepended
     final cats = <Map<String, String>>[
       {'name': 'All', 'icon': '🌐'},
       ...appState.categories.map((c) => {'name': c.name, 'icon': c.icon}),
     ];
 
-    while (_catNodes.length < cats.length) {
-      _catNodes.add(FocusNode(debugLabel: 'cat-${_catNodes.length}'));
-    }
+    while (_catNodes.length < cats.length) _catNodes.add(FocusNode());
 
     final currentCat = cats[_selectedCategoryIndex]['name']!;
     final filtered = appState.channels.where((ch) {
@@ -124,33 +69,21 @@ class _HomeScreenState extends State<HomeScreen> {
       return ch.category.toLowerCase() == currentCat.toLowerCase();
     }).toList();
 
-    while (_chNodes.length < filtered.length) {
-      _chNodes.add(FocusNode(debugLabel: 'ch-${_chNodes.length}'));
-    }
+    while (_chNodes.length < filtered.length) _chNodes.add(FocusNode());
 
-    return Focus(
+    return KeyboardListener(
+      focusNode: _rootFocusNode,
       autofocus: true,
-      onKeyEvent: _handleGlobalKey,
+      onKeyEvent: _handleKey,
       child: Scaffold(
         backgroundColor: AppTheme.surface,
         body: SafeArea(
           child: Column(
             children: [
-              // ── Top Bar ───────────────────────────────────────────────────
-              _TopBar(
-                appState: appState,
-                settingsFocusNode: _settingsFocusNode,
-                onSettingsFocused: () =>
-                    setState(() => _activePanel = _FocusPanel.topBar),
-                onSettingsDownArrow: () {
-                  setState(() => _activePanel = _FocusPanel.sidebar);
-                  if (_catNodes.isNotEmpty) {
-                    _catNodes[_selectedCategoryIndex].requestFocus();
-                  }
-                },
-              ),
+              // ── Top bar ─────────────────────────────────────────────────────
+              _TopBar(appState: appState),
 
-              // ── Main content ──────────────────────────────────────────────
+              // ── Main split view ─────────────────────────────────────────────
               Expanded(
                 child: appState.isLoading
                     ? Center(
@@ -159,99 +92,32 @@ class _HomeScreenState extends State<HomeScreen> {
                           strokeWidth: 3,
                         ),
                       )
-                    : appState.errorMessage.isNotEmpty && appState.channels.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.wifi_off_rounded,
-                                    color: Colors.white38, size: 48),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'চ্যানেল লোড হয়নি',
-                                  style: const TextStyle(
-                                      color: Colors.white70, fontSize: 18),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  appState.errorMessage,
-                                  style: const TextStyle(
-                                      color: Colors.white38, fontSize: 13),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 20),
-                                TextButton.icon(
-                                  onPressed: () => appState.loadCatalog(),
-                                  icon: const Icon(Icons.refresh_rounded,
-                                      color: AppTheme.primary),
-                                  label: const Text('আবার চেষ্টা করুন',
-                                      style:
-                                          TextStyle(color: AppTheme.primary)),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Padding(
+                    : Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ── Category Sidebar ──────────────────────────
+                            // Sidebar — categories
                             SizedBox(
                               width: size.width * 0.18,
-                              child: FocusScope(
-                                node: _sidebarScope,
-                                child: _CategorySidebar(
-                                  cats: cats,
-                                  catNodes: _catNodes,
-                                  selectedIndex: _selectedCategoryIndex,
-                                  onSelect: (i) => setState(
-                                      () => _selectedCategoryIndex = i),
-                                  onFocused: () => setState(
-                                      () => _activePanel = _FocusPanel.sidebar),
-                                  onUpArrow: () =>
-                                      _moveCategoryFocus(-1, cats.length),
-                                  onDownArrow: () =>
-                                      _moveCategoryFocus(1, cats.length),
-                                  onRightArrow: () {
-                                    setState(
-                                        () => _activePanel = _FocusPanel.grid);
-                                    if (_chNodes.isNotEmpty) {
-                                      _chNodes[0].requestFocus();
-                                    }
-                                  },
-                                  onTopExit: () {
-                                    setState(() =>
-                                        _activePanel = _FocusPanel.topBar);
-                                    _settingsFocusNode.requestFocus();
-                                  },
-                                ),
+                              child: _CategorySidebar(
+                                cats: cats,
+                                catNodes: _catNodes,
+                                selectedIndex: _selectedCategoryIndex,
+                                onSelect: (i) => setState(
+                                    () => _selectedCategoryIndex = i),
                               ),
                             ),
 
                             const SizedBox(width: 20),
 
-                            // ── Channel Grid ──────────────────────────────
+                            // Channel grid
                             Expanded(
-                              child: FocusScope(
-                                node: _gridScope,
-                                child: _ChannelGrid(
-                                  channels: filtered,
-                                  chNodes: _chNodes,
-                                  appState: appState,
-                                  categoryName: currentCat,
-                                  onFocused: () => setState(
-                                      () => _activePanel = _FocusPanel.grid),
-                                  onLeftExit: () {
-                                    setState(() =>
-                                        _activePanel = _FocusPanel.sidebar);
-                                    if (_catNodes.isNotEmpty) {
-                                      _catNodes[_selectedCategoryIndex]
-                                          .requestFocus();
-                                    }
-                                  },
-                                  onMoveGrid: _moveGridFocus,
-                                ),
+                              child: _ChannelGrid(
+                                channels: filtered,
+                                chNodes: _chNodes,
+                                appState: appState,
+                                categoryName: currentCat,
                               ),
                             ),
                           ],
@@ -266,201 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ─── Exit Confirmation Dialog ─────────────────────────────────────────────────
-
-class _ExitDialog extends StatefulWidget {
-  const _ExitDialog();
-
-  @override
-  State<_ExitDialog> createState() => _ExitDialogState();
-}
-
-class _ExitDialogState extends State<_ExitDialog> {
-  // 0 = থাকুন (Cancel), 1 = বের হন (Exit)
-  int _focusedBtn = 1;
-
-  final FocusNode _exitNode = FocusNode(debugLabel: 'dialog-exit');
-  final FocusNode _cancelNode = FocusNode(debugLabel: 'dialog-cancel');
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _exitNode.requestFocus();
-    });
-  }
-
-  @override
-  void dispose() {
-    _exitNode.dispose();
-    _cancelNode.dispose();
-    super.dispose();
-  }
-
-  KeyEventResult _onDialogKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-        event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      final next = _focusedBtn == 0 ? 1 : 0;
-      setState(() => _focusedBtn = next);
-      (next == 1 ? _exitNode : _cancelNode).requestFocus();
-      return KeyEventResult.handled;
-    }
-
-    if (event.logicalKey == LogicalKeyboardKey.escape ||
-        event.logicalKey == LogicalKeyboardKey.goBack) {
-      Navigator.of(context).pop(false);
-      return KeyEventResult.handled;
-    }
-
-    return KeyEventResult.ignored;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      onKeyEvent: _onDialogKey,
-      child: Dialog(
-        backgroundColor: const Color(0xFF1E1E2E),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 48, vertical: 36),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.power_settings_new_rounded,
-                    color: Colors.redAccent, size: 44),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'অ্যাপ থেকে বের হবেন?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'আপনি কি সত্যিই অ্যাপটি বন্ধ করতে চান?',
-                style: TextStyle(color: Colors.white54, fontSize: 14),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _DialogBtn(
-                    focusNode: _cancelNode,
-                    label: '  থাকুন  ',
-                    isFocused: _focusedBtn == 0,
-                    isDestructive: false,
-                    onFocus: () => setState(() => _focusedBtn = 0),
-                    onActivate: () => Navigator.of(context).pop(false),
-                  ),
-                  const SizedBox(width: 16),
-                  _DialogBtn(
-                    focusNode: _exitNode,
-                    label: '  বের হন  ',
-                    isFocused: _focusedBtn == 1,
-                    isDestructive: true,
-                    onFocus: () => setState(() => _focusedBtn = 1),
-                    onActivate: () => Navigator.of(context).pop(true),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogBtn extends StatelessWidget {
-  const _DialogBtn({
-    required this.focusNode,
-    required this.label,
-    required this.isFocused,
-    required this.isDestructive,
-    required this.onFocus,
-    required this.onActivate,
-  });
-
-  final FocusNode focusNode;
-  final String label;
-  final bool isFocused;
-  final bool isDestructive;
-  final VoidCallback onFocus;
-  final VoidCallback onActivate;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = isDestructive ? Colors.redAccent : AppTheme.primary;
-    return Focus(
-      focusNode: focusNode,
-      onFocusChange: (v) { if (v) onFocus(); },
-      onKeyEvent: (_, event) {
-        if (event is KeyDownEvent &&
-            (event.logicalKey == LogicalKeyboardKey.select ||
-                event.logicalKey == LogicalKeyboardKey.enter ||
-                event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
-          onActivate();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: GestureDetector(
-        onTap: onActivate,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding:
-              const EdgeInsets.symmetric(horizontal: 28, vertical: 13),
-          decoration: BoxDecoration(
-            color: isFocused ? accent : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isFocused ? accent : Colors.white24,
-              width: 2,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isFocused ? Colors.white : Colors.white54,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Top Bar ──────────────────────────────────────────────────────────────────
+// ─── Top Bar ─────────────────────────────────────────────────────────────────
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({
-    required this.appState,
-    required this.settingsFocusNode,
-    required this.onSettingsFocused,
-    required this.onSettingsDownArrow,
-  });
-
+  const _TopBar({required this.appState});
   final AppState appState;
-  final FocusNode settingsFocusNode;
-  final VoidCallback onSettingsFocused;
-  final VoidCallback onSettingsDownArrow;
 
   @override
   Widget build(BuildContext context) {
@@ -475,7 +151,7 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // ── Logo ────────────────────────────────────────────────────────
+          // Logo
           Row(
             children: [
               Container(
@@ -510,7 +186,7 @@ class _TopBar extends StatelessWidget {
 
           const Spacer(),
 
-          // ── Auth badge ──────────────────────────────────────────────────
+          // Auth info
           if (appState.isAuthenticated && appState.userProfile != null) ...[
             Container(
               padding:
@@ -518,8 +194,7 @@ class _TopBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppTheme.primary.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(20),
-                border:
-                    Border.all(color: AppTheme.primary.withOpacity(0.3)),
+                border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -539,10 +214,9 @@ class _TopBar extends StatelessWidget {
             const SizedBox(width: 12),
           ],
 
-          // ── Channel count ───────────────────────────────────────────────
+          // Channel count
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: AppTheme.card,
               borderRadius: BorderRadius.circular(20),
@@ -554,8 +228,7 @@ class _TopBar extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   '${appState.channels.length} চ্যানেল',
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -563,13 +236,10 @@ class _TopBar extends StatelessWidget {
 
           const SizedBox(width: 12),
 
-          // ── Settings button ─────────────────────────────────────────────
+          // Settings button
           _TvIconButton(
-            focusNode: settingsFocusNode,
             icon: Icons.settings_rounded,
             onTap: () => Navigator.pushNamed(context, '/settings'),
-            onFocused: onSettingsFocused,
-            onDownArrow: onSettingsDownArrow,
           ),
         ],
       ),
@@ -578,19 +248,9 @@ class _TopBar extends StatelessWidget {
 }
 
 class _TvIconButton extends StatefulWidget {
-  const _TvIconButton({
-    required this.focusNode,
-    required this.icon,
-    required this.onTap,
-    required this.onFocused,
-    required this.onDownArrow,
-  });
-
-  final FocusNode focusNode;
+  const _TvIconButton({required this.icon, required this.onTap});
   final IconData icon;
   final VoidCallback onTap;
-  final VoidCallback onFocused;
-  final VoidCallback onDownArrow;
 
   @override
   State<_TvIconButton> createState() => _TvIconButtonState();
@@ -599,30 +259,10 @@ class _TvIconButton extends StatefulWidget {
 class _TvIconButtonState extends State<_TvIconButton> {
   bool _focused = false;
 
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      widget.onTap();
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      widget.onDownArrow();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Focus(
-      focusNode: widget.focusNode,
-      onFocusChange: (v) {
-        setState(() => _focused = v);
-        if (v) widget.onFocused();
-      },
-      onKeyEvent: _onKey,
+      onFocusChange: (v) => setState(() => _focused = v),
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
@@ -656,22 +296,12 @@ class _CategorySidebar extends StatelessWidget {
     required this.catNodes,
     required this.selectedIndex,
     required this.onSelect,
-    required this.onFocused,
-    required this.onUpArrow,
-    required this.onDownArrow,
-    required this.onRightArrow,
-    required this.onTopExit,
   });
 
   final List<Map<String, String>> cats;
   final List<FocusNode> catNodes;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
-  final VoidCallback onFocused;
-  final VoidCallback onUpArrow;
-  final VoidCallback onDownArrow;
-  final VoidCallback onRightArrow;
-  final VoidCallback onTopExit;
 
   @override
   Widget build(BuildContext context) {
@@ -693,22 +323,17 @@ class _CategorySidebar extends StatelessWidget {
         Expanded(
           child: ListView.builder(
             itemCount: cats.length,
-            // Key handler দিয়ে scroll হবে, physics বন্ধ
-            physics: const NeverScrollableScrollPhysics(),
+            physics: const BouncingScrollPhysics(),
             itemBuilder: (context, i) {
+              final cat = cats[i];
+              final selected = selectedIndex == i;
               return _CatItem(
                 focusNode: catNodes[i],
-                icon: cats[i]['icon']!,
-                name: cats[i]['name']!,
-                selected: selectedIndex == i,
+                icon: cat['icon']!,
+                name: cat['name']!,
+                selected: selected,
                 onTap: () => onSelect(i),
-                onFocus: () {
-                  onSelect(i);
-                  onFocused();
-                },
-                onUpArrow: i == 0 ? onTopExit : onUpArrow,
-                onDownArrow: onDownArrow,
-                onRightArrow: onRightArrow,
+                onFocus: () => onSelect(i),
               );
             },
           ),
@@ -726,9 +351,6 @@ class _CatItem extends StatefulWidget {
     required this.selected,
     required this.onTap,
     required this.onFocus,
-    required this.onUpArrow,
-    required this.onDownArrow,
-    required this.onRightArrow,
   });
 
   final FocusNode focusNode;
@@ -737,9 +359,6 @@ class _CatItem extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onFocus;
-  final VoidCallback onUpArrow;
-  final VoidCallback onDownArrow;
-  final VoidCallback onRightArrow;
 
   @override
   State<_CatItem> createState() => _CatItemState();
@@ -747,30 +366,6 @@ class _CatItem extends StatefulWidget {
 
 class _CatItemState extends State<_CatItem> {
   bool _focused = false;
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      widget.onUpArrow();
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      widget.onDownArrow();
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      widget.onRightArrow();
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      widget.onTap();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -783,7 +378,6 @@ class _CatItemState extends State<_CatItem> {
           setState(() => _focused = v);
           if (v) widget.onFocus();
         },
-        onKeyEvent: _onKey,
         child: GestureDetector(
           onTap: widget.onTap,
           child: AnimatedContainer(
@@ -834,28 +428,18 @@ class _ChannelGrid extends StatelessWidget {
     required this.chNodes,
     required this.appState,
     required this.categoryName,
-    required this.onFocused,
-    required this.onLeftExit,
-    required this.onMoveGrid,
   });
 
   final List channels;
   final List<FocusNode> chNodes;
   final AppState appState;
   final String categoryName;
-  final VoidCallback onFocused;
-  final VoidCallback onLeftExit;
-  final Function(int currentIndex, int delta, int total, int crossCount)
-      onMoveGrid;
-
-  static const int _crossCount = 5;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Header ──────────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.only(bottom: 12, top: 8, left: 4),
           child: Row(
@@ -889,59 +473,39 @@ class _ChannelGrid extends StatelessWidget {
             ],
           ),
         ),
-
-        // ── Grid ────────────────────────────────────────────────────────
         Expanded(
           child: channels.isEmpty
               ? const Center(
                   child: Text(
                     'কোনো চ্যানেল পাওয়া যায়নি',
-                    style:
-                        TextStyle(color: Colors.white38, fontSize: 16),
+                    style: TextStyle(color: Colors.white38, fontSize: 16),
                   ),
                 )
               : GridView.builder(
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: _crossCount,
+                    crossAxisCount: 5,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                     childAspectRatio: 1.4,
                   ),
-                  // Key handler দিয়ে scroll হবে
-                  physics: const NeverScrollableScrollPhysics(),
+                  physics: const BouncingScrollPhysics(),
                   itemCount: channels.length,
                   itemBuilder: (context, i) {
                     final ch = channels[i];
                     final origIdx = appState.channels.indexOf(ch);
-                    final playing = appState.currentChannelIndex == origIdx;
+                    final playing =
+                        appState.currentChannelIndex == origIdx;
 
-                    return _GridCell(
-                      index: i,
+                    return TvFocusCard(
                       focusNode: chNodes[i],
-                      crossCount: _crossCount,
-                      totalCount: channels.length,
-                      onFocused: onFocused,
-                      // Row-এর প্রথম column-এ থাকলে Left → sidebar
-                      onLeftExit:
-                          i % _crossCount == 0 ? onLeftExit : null,
-                      onMove: (delta) => onMoveGrid(
-                          i, delta, channels.length, _crossCount),
-                      onSelect: () {
+                      selected: playing,
+                      padding: EdgeInsets.zero,
+                      onTap: () {
                         appState.currentChannelIndex = origIdx;
                         Navigator.pushNamed(context, '/player');
                       },
-                      child: TvFocusCard(
-                        focusNode: chNodes[i],
-                        selected: playing,
-                        padding: EdgeInsets.zero,
-                        onTap: () {
-                          appState.currentChannelIndex = origIdx;
-                          Navigator.pushNamed(context, '/player');
-                        },
-                        child: _ChannelCard(
-                            channel: ch, isPlaying: playing),
-                      ),
+                      child: _ChannelCard(channel: ch, isPlaying: playing),
                     );
                   },
                 ),
@@ -950,76 +514,6 @@ class _ChannelGrid extends StatelessWidget {
     );
   }
 }
-
-// ── Grid Cell Key Handler Wrapper ─────────────────────────────────────────────
-
-class _GridCell extends StatelessWidget {
-  const _GridCell({
-    required this.index,
-    required this.focusNode,
-    required this.crossCount,
-    required this.totalCount,
-    required this.onFocused,
-    required this.onLeftExit,
-    required this.onMove,
-    required this.onSelect,
-    required this.child,
-  });
-
-  final int index;
-  final FocusNode focusNode;
-  final int crossCount;
-  final int totalCount;
-  final VoidCallback onFocused;
-  final VoidCallback? onLeftExit;
-  final ValueChanged<int> onMove;
-  final VoidCallback onSelect;
-  final Widget child;
-
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-      onMove(-crossCount);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      onMove(crossCount);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-      onMove(1);
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-      if (onLeftExit != null) {
-        onLeftExit!();
-      } else {
-        onMove(-1);
-      }
-      return KeyEventResult.handled;
-    }
-    if (event.logicalKey == LogicalKeyboardKey.select ||
-        event.logicalKey == LogicalKeyboardKey.enter ||
-        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
-      onSelect();
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      focusNode: focusNode,
-      onFocusChange: (v) { if (v) onFocused(); },
-      onKeyEvent: _onKey,
-      child: child,
-    );
-  }
-}
-
-// ─── Channel Card ─────────────────────────────────────────────────────────────
 
 class _ChannelCard extends StatelessWidget {
   const _ChannelCard({required this.channel, required this.isPlaying});
@@ -1033,7 +527,7 @@ class _ChannelCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Logo
+          // Logo area
           Container(
             color: AppTheme.card,
             padding: const EdgeInsets.all(12),
@@ -1048,7 +542,7 @@ class _ChannelCard extends StatelessWidget {
                 : _logoPlaceholder(),
           ),
 
-          // Channel name
+          // Channel name bottom bar
           Positioned(
             left: 0,
             right: 0,
@@ -1060,7 +554,7 @@ class _ChannelCard extends StatelessWidget {
                 gradient: LinearGradient(
                   colors: [
                     Colors.black.withOpacity(0.85),
-                    Colors.transparent,
+                    Colors.transparent
                   ],
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
@@ -1079,7 +573,7 @@ class _ChannelCard extends StatelessWidget {
             ),
           ),
 
-          // Badges
+          // Badges top-left
           Positioned(
             top: 6,
             left: 6,
@@ -1087,10 +581,9 @@ class _ChannelCard extends StatelessWidget {
               children: [
                 if (channel.isPremium == 1)
                   _Badge(
-                    label: 'PREMIUM',
-                    bg: const Color(0xFFEAB308),
-                    fg: Colors.black,
-                  ),
+                      label: 'PREMIUM',
+                      bg: const Color(0xFFEAB308),
+                      fg: Colors.black),
                 const SizedBox(width: 3),
                 _Badge(
                   label: channel.quality.toUpperCase(),
@@ -1101,7 +594,7 @@ class _ChannelCard extends StatelessWidget {
             ),
           ),
 
-          // Now playing overlay
+          // Now playing glow overlay
           if (isPlaying)
             Positioned.fill(
               child: Container(
@@ -1131,7 +624,8 @@ class _ChannelCard extends StatelessWidget {
 }
 
 class _Badge extends StatelessWidget {
-  const _Badge({required this.label, required this.bg, required this.fg});
+  const _Badge(
+      {required this.label, required this.bg, required this.fg});
   final String label;
   final Color bg;
   final Color fg;
@@ -1140,13 +634,11 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
-      child: Text(
-        label,
-        style: TextStyle(
-            color: fg, fontSize: 8, fontWeight: FontWeight.w900),
-      ),
+      decoration: BoxDecoration(
+          color: bg, borderRadius: BorderRadius.circular(4)),
+      child: Text(label,
+          style: TextStyle(
+              color: fg, fontSize: 8, fontWeight: FontWeight.w900)),
     );
   }
 }
@@ -1167,13 +659,11 @@ class _LiveDot extends StatelessWidget {
         children: [
           CircleAvatar(radius: 3, backgroundColor: Colors.white),
           SizedBox(width: 4),
-          Text(
-            'LIVE',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.bold),
-          ),
+          Text('LIVE',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.bold)),
         ],
       ),
     );
