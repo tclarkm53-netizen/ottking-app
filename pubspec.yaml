@@ -1,5 +1,5 @@
 name: ottking_app
-description: Secure multi-platform live TV streaming app with mobile and smart TV experiences.
+description: Professional Smart TV Live Streaming App — TV-only landscape UI.
 version: 1.0.0+1
 
 environment:
@@ -16,7 +16,7 @@ dependencies:
   encrypt: ^5.0.3
   video_player: ^2.9.2
   device_info_plus: ^10.1.2
-  wakelock_plus: ^1.5.2 # এখানে ভার্সন চেঞ্জ করা হয়েছে
+  wakelock_plus: ^1.5.2
 
 dev_dependencies:
   flutter_test:
