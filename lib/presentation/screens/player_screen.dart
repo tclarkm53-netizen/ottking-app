@@ -11,7 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 import 'player_widgets/player_top_panel.dart';
 import 'player_widgets/player_bottom_bar.dart';
-import 'player_widgets/channel_list_panel.dart';
+import 'channel_list_panel.dart';
 import 'player_widgets/loading_overlay.dart';
 import 'player_widgets/app_info_dialog.dart';
 
@@ -22,8 +22,7 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen>
-    with WidgetsBindingObserver {
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
   final FocusNode _focus = FocusNode(debugLabel: 'player-root');
 
   VideoPlayerController? _ctrl;
@@ -176,9 +175,9 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     try {
       await newCtrl.initialize().timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => throw TimeoutException('timeout'),
-      );
+            const Duration(seconds: 20),
+            onTimeout: () => throw TimeoutException('timeout'),
+          );
 
       if (!mounted) {
         newCtrl.dispose();
@@ -354,7 +353,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     ).then((_) => _startControlsTimer());
   }
 
-  // ========== Exit ==========
+  // ========== Exit Logic ==========
 
   Future<void> _handleExit() async {
     if (_appState == null) return;
@@ -385,8 +384,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
             TextButton(
               onPressed: () => Navigator.pop(context, true),
-              child:
-                  Text('হ্যাঁ', style: TextStyle(color: AppTheme.primary)),
+              child: Text('হ্যাঁ', style: TextStyle(color: AppTheme.primary)),
             ),
           ],
         ),
@@ -444,45 +442,29 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   // ========== Key Handler ==========
-  // নিয়ম:
-  //  - কন্ট্রোলার দেখা যাক বা না যাক, p+/p- (channelUp/Down, pageUp/Down) → চ্যানেল চেঞ্জ
-  //  - কন্ট্রোলার দেখা: ↑↓ → চ্যানেল চেঞ্জ, ←→ → ব্যবহার নেই (bottom bar নিজেই হ্যান্ডেল করে)
-  //  - আগের ← → আইকন ইভেন্ট (AppInfo, Settings) সরানো হয়েছে
-  //  - Settings এখন শুধু top-right settings বোতাম থেকে খোলে
 
   void _handleKey(KeyEvent event) {
     final label = event.logicalKey.keyLabel;
 
     if (event is KeyDownEvent) {
-      // সংখ্যা ইনপুট
       if (RegExp(r'^[0-9]$').hasMatch(label)) {
         _handleNumberInput(label);
         return;
       }
 
-      // p+ / p- / channel keys — সর্বদা চ্যানেল চেঞ্জ
       if (event.logicalKey == LogicalKeyboardKey.channelUp ||
-          event.logicalKey == LogicalKeyboardKey.pageUp) {
+          event.logicalKey == LogicalKeyboardKey.pageUp ||
+          event.logicalKey == LogicalKeyboardKey.arrowUp) {
         _switchChannel(-1);
         return;
       }
       if (event.logicalKey == LogicalKeyboardKey.channelDown ||
-          event.logicalKey == LogicalKeyboardKey.pageDown) {
+          event.logicalKey == LogicalKeyboardKey.pageDown ||
+          event.logicalKey == LogicalKeyboardKey.arrowDown) {
         _switchChannel(1);
         return;
       }
 
-      // ↑↓ — চ্যানেল চেঞ্জ
-      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-        _switchChannel(-1);
-        return;
-      }
-      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-        _switchChannel(1);
-        return;
-      }
-
-      // OK বোতাম — লং প্রেস চেক শুরু
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -490,7 +472,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         _longHandled = false;
       }
 
-      // যেকোনো কী তে কন্ট্রোল দেখান
       if (!_showControls) {
         setState(() => _showControls = true);
         _startControlsTimer();
@@ -498,7 +479,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
       _startControlsTimer();
 
-      // ESC — এক্সিট
       if (event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.goBack) {
         _handleExit();
@@ -509,9 +489,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
-        final held = _okDown != null
-            ? DateTime.now().difference(_okDown!)
-            : Duration.zero;
+        final held = _okDown != null ? DateTime.now().difference(_okDown!) : Duration.zero;
         _okDown = null;
 
         if (!_longHandled && held.inMilliseconds >= 800) {
@@ -548,10 +526,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     final ch = _appState!.currentChannel;
-    final initialized =
-        _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
-    final isLive = _ctrl?.value.duration == Duration.zero ||
-        _ctrl?.value.duration == null;
+    final initialized = _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
+    final isLive = _ctrl?.value.duration == Duration.zero || _ctrl?.value.duration == null;
 
     return KeyboardListener(
       focusNode: _focus,
@@ -569,7 +545,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ===== ভিডিও প্লেয়ার =====
               if (initialized)
                 SizedBox.expand(
                   child: FittedBox(
@@ -598,7 +573,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                   onNext: () => _switchChannel(1),
                 ),
 
-              // ===== টপ প্যানেল (top-left: CH+Name, top-right: Settings) =====
               if (_showControls)
                 PlayerTopPanel(
                   channel: ch,
@@ -608,7 +582,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                   typedNumber: _typed,
                 ),
 
-              // ===== বটম কন্ট্রোল বার =====
               if (_showControls && initialized)
                 PlayerBottomBar(
                   ctrl: _ctrl!,
@@ -620,7 +593,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                   onChannelDown: () => _switchChannel(1),
                 ),
 
-              // ===== চ্যানেল লিস্ট সাইড প্যানেল =====
               if (_showChannelList)
                 ChannelListPanel(
                   channels: _appState!.channels,
@@ -629,8 +601,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     setState(() => _showChannelList = false);
                     _switchToIndex(i);
                   },
-                  onClose: () =>
-                      setState(() => _showChannelList = false),
+                  onClose: () => setState(() => _showChannelList = false),
                 ),
             ],
           ),
@@ -640,7 +611,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 }
 
-// ========== Settings Dialog Widget ==========
+// ========== Settings Dialog Widget (Dynamic Focus Fix) ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -660,15 +631,30 @@ class _SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<_SettingsDialog> {
-  // ফোকাসযোগ্য আইটেমগুলো
-  final List<FocusNode> _focusNodes = List.generate(4, (i) => FocusNode());
+  // কন্ডিশনাল ফোকাস নোড ম্যানেজমেন্টের জন্য ডায়নামিক লিস্ট
+  final List<FocusNode> _focusNodes = [];
+  final List<int> _itemIndices = [];
   int _focusedIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    
+    // রেন্ডার হওয়া পসিবল আইটেমের সংখ্যার উপর ভিত্তি করে ডাইনামিকলি ফোকাস ক্রিয়েট করা
+    int totalItems = 3; // Boot, App Info, Settings Button
+    if (widget.state.isAuthenticated) {
+      totalItems = 4; // + User profile
+    }
+
+    for (int i = 0; i < totalItems; i++) {
+      _focusNodes.add(FocusNode());
+      _itemIndices.add(i);
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNodes[0].requestFocus();
+      if (_focusNodes.isNotEmpty) {
+        _focusNodes[0].requestFocus();
+      }
     });
   }
 
@@ -679,6 +665,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   }
 
   void _moveFocus(int dir) {
+    if (_focusNodes.isEmpty) return;
     final next = (_focusedIndex + dir).clamp(0, _focusNodes.length - 1);
     setState(() => _focusedIndex = next);
     _focusNodes[next].requestFocus();
@@ -703,15 +690,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   }
 
   Widget _focusableItem({
-    required int index,
+    required int listIndex,
     required Widget child,
     required VoidCallback onActivate,
   }) {
-    final isFocused = _focusedIndex == index;
+    final isFocused = _focusedIndex == listIndex;
     return Focus(
-      focusNode: _focusNodes[index],
+      focusNode: _focusNodes[listIndex],
       onFocusChange: (v) {
-        if (v) setState(() => _focusedIndex = index);
+        if (v) setState(() => _focusedIndex = listIndex);
       },
       onKeyEvent: (_, e) {
         if (e is KeyDownEvent &&
@@ -727,9 +714,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: isFocused
-                ? AppTheme.primary.withOpacity(0.15)
-                : Colors.transparent,
+            color: isFocused ? AppTheme.primary.withOpacity(0.15) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isFocused ? AppTheme.primary : Colors.transparent,
@@ -745,6 +730,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    
+    // রিয়েলটাইম লিস্ট ইনডেক্স ট্র্যাক করার জন্য ভ্যারিয়েবল
+    int currentVisualIndex = 0;
+
     return AlertDialog(
       backgroundColor: Colors.black.withOpacity(0.95),
       shape: RoundedRectangleBorder(
@@ -755,8 +744,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         children: [
           Icon(Icons.settings, color: Colors.white),
           SizedBox(width: 10),
-          Text('প্লেয়ার সেটিংস',
-              style: TextStyle(color: Colors.white)),
+          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -764,16 +752,13 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         children: [
           // ১. Boot Player টগল
           _focusableItem(
-            index: 0,
+            listIndex: currentVisualIndex++,
             onActivate: () => state.togglePlayerBoot(),
             child: SwitchListTile(
-              title: const Text('Boot Player (অটো প্লেয়ার)',
-                  style: TextStyle(color: Colors.white)),
+              title: const Text('Boot Player (অটো প্লেয়ার)', style: TextStyle(color: Colors.white)),
               subtitle: Text(
                 'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
-                style: TextStyle(
-                    color: Colors.white.withOpacity(0.55),
-                    fontSize: 12),
+                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
               ),
               activeColor: AppTheme.primary,
               value: state.isPlayerBootEnabled,
@@ -781,24 +766,22 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ),
           ),
 
-          // ২. User info (যদি লগ ইন থাকে)
+          // ২. User info (ডাইনামিক রেন্ডারিং ফিক্সড)
           if (state.isAuthenticated)
             _focusableItem(
-              index: 1,
+              listIndex: currentVisualIndex++,
               onActivate: () {},
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: ListTile(
-                  leading: const Icon(Icons.stars_rounded,
-                      color: Color(0xFFEAB308)),
+                  leading: const Icon(Icons.stars_rounded, color: Color(0xFFEAB308)),
                   title: Text(
                     state.userProfile?.email ?? '',
                     style: const TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
                     'প্ল্যান: ${state.userProfile?.plan ?? ''}',
-                    style: const TextStyle(
-                        color: Colors.white54, fontSize: 12),
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                 ),
               ),
@@ -806,33 +789,28 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
           const Divider(color: Colors.white12, height: 20),
 
-          // ৩. অ্যাপ তথ্য — নতুন অপশন
+          // ৩. অ্যাপ তথ্য
           _focusableItem(
-            index: 2,
+            listIndex: currentVisualIndex++,
             onActivate: widget.onAppInfo,
             child: ListTile(
-              leading: const Icon(Icons.info_outline_rounded,
-                  color: AppTheme.primary),
-              title: const Text('অ্যাপ তথ্য (App Info)',
-                  style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
+              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
-                  style:
-                      TextStyle(color: Colors.white54, fontSize: 12)),
-              trailing: const Icon(Icons.chevron_right,
-                  color: Colors.white38),
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
             ),
           ),
         ],
       ),
       actions: [
-        // সেটিংস পেজে যাও
+        // ৪. সেটিংস পেজে যাওয়ার বাটন
         _focusableItem(
-          index: 3,
+          listIndex: currentVisualIndex++,
           onActivate: widget.onNavigateSettings,
           child: TextButton(
             onPressed: widget.onNavigateSettings,
-            child: const Text('সেটিংস',
-                style: TextStyle(color: Colors.white54)),
+            child: const Text('সেটিংস', style: TextStyle(color: Colors.white54)),
           ),
         ),
         TextButton(
