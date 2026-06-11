@@ -1,228 +1,874 @@
-// lib/presentation/screens/player_widgets/player_top_panel.dart
+// lib/presentation/screens/player_screen.dart
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../../core/theme/app_theme.dart';
+import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
-class PlayerTopPanel extends StatefulWidget {
-  const PlayerTopPanel({
-    super.key,
-    required this.channel,
-    required this.currentIndex,
-    required this.totalChannels,
-    required this.onSettings,
-    required this.isPlaying, // প্লেয়ার প্লে নাকি পজ অবস্থায় আছে
-    this.typedNumber = '',
-  });
+import '../../core/theme/app_theme.dart';
+import '../providers/app_state.dart';
+import 'player_widgets/player_top_panel.dart';
+import 'player_widgets/player_bottom_bar.dart';
+import 'channel_list_panel.dart';
+import 'player_widgets/loading_overlay.dart';
+import 'player_widgets/app_info_dialog.dart';
 
-  final dynamic channel;
-  final int currentIndex;
-  final int totalChannels;
-  final VoidCallback onSettings;
-  final bool isPlaying;
-  final String typedNumber;
+class PlayerScreen extends StatefulWidget {
+  const PlayerScreen({super.key});
 
   @override
-  State<PlayerTopPanel> createState() => _PlayerTopPanelState();
+  State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProviderStateMixin {
-  final FocusNode _settingsFocus = FocusNode(debugLabel: 'settings-btn');
-  
-  // শুরুতে false থাকবে, রিমোট দিয়ে সেটিংস বাটনে গেলে কেবল true হবে
-  bool _isSettingsFocused = false; 
-  
-  // LIVE লেখা ব্লিংক করানোর জন্য কন্ট্রোলার
-  late AnimationController _blinkController;
+class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
+  final FocusNode _focus = FocusNode(debugLabel: 'player-root');
+
+  VideoPlayerController? _ctrl;
+  VoidCallback? _ctrlListener;
+  String? _activeChannelId;
+
+  bool _showControls = true;
+  bool _isLoading = false;
+  bool _hasStreamError = false;
+  bool _showChannelList = false;
+  bool _liveBlink = true;
+
+  AppState? _appState;
+
+  Timer? _controlsTimer;
+  Timer? _numberTimer;
+  Timer? _retryTimer;
+  Timer? _blinkTimer;
+
+  String _typed = '';
+  int _retryCount = 0;
+  static const int _maxRetry = 3;
+
+  DateTime? _okDown;
+  bool _longHandled = false;
+
+  // ========== Lifecycle ==========
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _wakelock();
+      if (_ctrl?.value.hasError == true) {
+        _retryCount = 0;
+        _initController();
+      }
+    } else if (state == AppLifecycleState.paused) {
+      _ctrl?.pause();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _blinkController = AnimationController(
-      duration: const Duration(milliseconds: 1000),
-      vsync: this,
-    )..repeat(reverse: true);
+    WidgetsBinding.instance.addObserver(this);
+    _forceFullLandscape();
+    _wakelock();
+    _startBlinkTimer();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _appState = Provider.of<AppState>(context, listen: false);
+        _initController();
+        _startControlsTimer();
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _appState = context.watch<AppState>();
+  }
+
+  void _forceFullLandscape() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  Future<void> _wakelock() async {
+    try {
+      await WakelockPlus.enable();
+    } catch (_) {}
+  }
+
+  void _startBlinkTimer() {
+    _blinkTimer?.cancel();
+    _blinkTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
+      if (mounted) setState(() => _liveBlink = !_liveBlink);
+    });
+  }
+
+  void _startControlsTimer() {
+    _controlsTimer?.cancel();
+    _controlsTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted && _showControls && _typed.isEmpty) {
+        setState(() => _showControls = false);
+      }
+    });
+  }
+
+  void _toggleControls() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _startControlsTimer();
+  }
+
+  // ========== Controller ==========
+
+  void _disposeOld(VideoPlayerController old, VoidCallback? listener) {
+    Future(() async {
+      try {
+        if (listener != null) old.removeListener(listener);
+        await old.setVolume(0);
+        if (old.value.isPlaying) await old.pause();
+      } catch (_) {} finally {
+        old.dispose();
+      }
+    });
+  }
+
+  Future<void> _initController() async {
+    if (!mounted || _appState == null) return;
+    final channel = _appState!.currentChannel;
+
+    if (_activeChannelId == channel.id &&
+        _ctrl != null &&
+        _ctrl!.value.isInitialized &&
+        !_ctrl!.value.hasError) return;
+
+    setState(() {
+      _isLoading = true;
+      _hasStreamError = false;
+      _activeChannelId = channel.id;
+    });
+
+    if (_ctrl != null) {
+      final old = _ctrl!;
+      final oldL = _ctrlListener;
+      _ctrl = null;
+      _ctrlListener = null;
+      _disposeOld(old, oldL);
+    }
+
+    final newCtrl = VideoPlayerController.networkUrl(
+      Uri.parse(channel.streamUrl),
+      videoPlayerOptions: VideoPlayerOptions(
+        allowBackgroundPlayback: false,
+        mixWithOthers: false,
+      ),
+      httpHeaders: {
+        'User-Agent':
+            'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Connection': 'keep-alive',
+      },
+    );
+
+    try {
+      await newCtrl.initialize().timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw TimeoutException('timeout'),
+      );
+
+      if (!mounted) {
+        newCtrl.dispose();
+        return;
+      }
+
+      await newCtrl.play();
+      _wakelock();
+
+      _ctrlListener = _onCtrlUpdate;
+      newCtrl.addListener(_ctrlListener!);
+      _retryCount = 0;
+
+      setState(() {
+        _ctrl = newCtrl;
+        _isLoading = false;
+        _hasStreamError = false;
+      });
+    } catch (e) {
+      debugPrint('Init error: $e');
+      newCtrl.dispose();
+      _handleLoadError();
+    }
+  }
+
+  void _onCtrlUpdate() {
+    if (!mounted) return;
+    if (_ctrl?.value.hasError == true) {
+      _scheduleRetry();
+    }
+    setState(() {});
+  }
+
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    if (_retryCount >= _maxRetry) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _hasStreamError = true;
+        });
+      }
+      return;
+    }
+    _retryCount++;
+    if (mounted) setState(() => _isLoading = true);
+    _retryTimer = Timer(Duration(seconds: _retryCount * 2), () {
+      if (mounted) {
+        setState(() => _activeChannelId = null);
+        _initController();
+      }
+    });
+  }
+
+  void _handleLoadError() {
+    if (!mounted) return;
+    if (_retryCount < _maxRetry) {
+      _scheduleRetry();
+    } else {
+      setState(() {
+        _isLoading = false;
+        _hasStreamError = true;
+      });
+    }
+  }
+
+  // ========== Channel Switch ==========
+
+  void _switchChannel(int direction) {
+    if (_appState == null) return;
+
+    _retryTimer?.cancel();
+    _retryCount = 0;
+
+    if (_ctrl != null) {
+      final old = _ctrl!;
+      final oldL = _ctrlListener;
+      _ctrl = null;
+      _ctrlListener = null;
+      _disposeOld(old, oldL);
+    }
+
+    setState(() {
+      _showControls = true;
+      _isLoading = true;
+      _hasStreamError = false;
+      _activeChannelId = null;
+    });
+    _startControlsTimer();
+
+    _appState!.switchChannel(direction);
+
+    Future.microtask(() {
+      if (mounted) _initController();
+    });
+  }
+
+  void _switchToIndex(int index) {
+    if (_appState == null) return;
+    final allCh = _appState!.channels;
+    if (index < 0 || index >= allCh.length) {
+      _showSnack('$index নম্বরে কোনো চ্যানেল নেই');
+      return;
+    }
+
+    _retryTimer?.cancel();
+    _retryCount = 0;
+
+    if (_ctrl != null) {
+      final old = _ctrl!;
+      final oldL = _ctrlListener;
+      _ctrl = null;
+      _ctrlListener = null;
+      _disposeOld(old, oldL);
+    }
+
+    setState(() {
+      _showControls = true;
+      _isLoading = true;
+      _hasStreamError = false;
+      _activeChannelId = null;
+    });
+
+    _appState!.selectChannelByIndex(index);
+    Future.microtask(() {
+      if (mounted) _initController();
+    });
+  }
+
+  void _handleNumberInput(String digit) {
+    _numberTimer?.cancel();
+    setState(() {
+      _showControls = true;
+      _typed += digit;
+    });
+    _numberTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted && _typed.isNotEmpty) {
+        final n = int.tryParse(_typed);
+        if (n != null) _switchToIndex(n - 1);
+        setState(() => _typed = '');
+        _startControlsTimer();
+      }
+    });
+  }
+
+  // ========== Settings Dialog ==========
+
+  void _openSettings() {
+    _controlsTimer?.cancel();
+    showDialog(
+      context: context,
+      builder: (_) => Consumer<AppState>(
+        builder: (ctx, state, __) => _SettingsDialog(
+          state: state,
+          onAppInfo: () {
+            Navigator.pop(context); // settings বন্ধ করে
+            _showAppInfo();
+          },
+          onNavigateSettings: () {
+            Navigator.pop(context);
+            Navigator.pushNamed(context, '/settings');
+          },
+          onClose: () => Navigator.pop(context),
+        ),
+      ),
+    ).then((_) => _startControlsTimer());
+  }
+
+  void _showAppInfo() {
+    showDialog(
+      context: context,
+      builder: (_) => const AppInfoDialog(),
+    ).then((_) => _startControlsTimer());
+  }
+
+  // ========== Exit (পপ-আপ সহ সংশোধিত কন্ডিশনাল এক্সিট) ==========
+
+  Future<void> _handleExit() async {
+    if (_appState == null) return;
+    _controlsTimer?.cancel(); // ডায়ালগ থাকা অবস্থায় প্যানেল যেন হাইড না হয়
+
+    final shouldFullExit = _appState!.isPlayerBootEnabled;
+
+    if (shouldFullExit) {
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          backgroundColor: Colors.black.withOpacity(0.95),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: AppTheme.primary, width: 1.5),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.exit_to_app, color: Colors.white),
+              SizedBox(width: 10),
+              Text('অ্যাপ এক্সিট', style: TextStyle(color: Colors.white, fontSize: 18)),
+            ],
+          ),
+          content: const Text(
+            'আপনি কি নিশ্চিতভাবেই প্লেয়ার বন্ধ করতে চান?',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          actions: [
+            Focus(
+              autofocus: true, // ডায়ালগ ওপেন হলে ডিফল্ট ফোকাস 'না' বাটনে থাকবে
+              child: Builder(
+                builder: (ctx) {
+                  final isFocused = Focus.of(ctx).hasFocus;
+                  return OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: isFocused ? AppTheme.primary : Colors.white24),
+                      backgroundColor: isFocused ? AppTheme.primary.withOpacity(0.1) : Colors.transparent,
+                    ),
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('না', style: TextStyle(color: Colors.white)),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            Focus(
+              child: Builder(
+                builder: (ctx) {
+                  final isFocused = Focus.of(ctx).hasFocus;
+                  return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isFocused ? AppTheme.primary : Colors.grey[900],
+                      side: BorderSide(color: isFocused ? Colors.white : Colors.transparent),
+                    ),
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('হ্যাঁ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true && mounted) {
+        await _exit();
+      } else {
+        _startControlsTimer();
+      }
+    } else {
+      // Boot Player বন্ধ থাকলে সরাসরি হোমে ব্যাক করবে (কোনো পপ-আপ ছাড়াই)
+      await _goToHome();
+    }
+  }
+
+  Future<void> _goToHome() async {
+    _controlsTimer?.cancel();
+    _numberTimer?.cancel();
+    _retryTimer?.cancel();
+    _blinkTimer?.cancel();
+    try { await WakelockPlus.disable(); } catch (_) {}
+    try { await _ctrl?.pause(); } catch (_) {}
+    if (!mounted) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    Navigator.pushReplacementNamed(context, '/home');
+  }
+
+  Future<void> _exit() async {
+    _controlsTimer?.cancel();
+    _numberTimer?.cancel();
+    _retryTimer?.cancel();
+    _blinkTimer?.cancel();
+    try { await WakelockPlus.disable(); } catch (_) {}
+    try { await _ctrl?.pause(); } catch (_) {}
+    if (!mounted) return;
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    exit(0);
+  }
+
+  void _togglePlayPause() {
+    if (_isLoading || _hasStreamError) return;
+    final c = _ctrl;
+    if (c == null || !c.value.isInitialized) return;
+    setState(() {
+      c.value.isPlaying ? c.pause() : c.play();
+    });
+    _wakelock();
+    _startControlsTimer();
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+          content: Text(msg),
+          duration: const Duration(seconds: 2),
+          backgroundColor: AppTheme.card));
+  }
+
+  // ========== Key Handler (ডিফল্ট ব্যাক অ্যাকশন ইন্টারসেপ্ট) ==========
+
+  void _handleKey(KeyEvent event) {
+    final label = event.logicalKey.keyLabel;
+
+    if (event is KeyDownEvent) {
+      if (RegExp(r'^[0-9]$').hasMatch(label)) {
+        _handleNumberInput(label);
+        return;
+      }
+
+      if (event.logicalKey == LogicalKeyboardKey.channelUp ||
+          event.logicalKey == LogicalKeyboardKey.pageUp) {
+        _switchChannel(-1);
+        return;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.channelDown ||
+          event.logicalKey == LogicalKeyboardKey.pageDown) {
+        _switchChannel(1);
+        return;
+      }
+
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _switchChannel(-1);
+        return;
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _switchChannel(1);
+        return;
+      }
+
+      if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.select ||
+          event.logicalKey == LogicalKeyboardKey.space) {
+        _okDown ??= DateTime.now();
+        _longHandled = false;
+      }
+
+      if (!_showControls) {
+        setState(() => _showControls = true);
+        _startControlsTimer();
+        return;
+      }
+      _startControlsTimer();
+
+      // রিমোট বা কিবোর্ডের ব্যাক বাটন ট্রিপাল চেক
+      if (event.logicalKey == LogicalKeyboardKey.escape ||
+          event.logicalKey == LogicalKeyboardKey.goBack ||
+          event.logicalKey == LogicalKeyboardKey.backspace) {
+        _handleExit();
+        return;
+      }
+    }
+
+    if (event is KeyUpEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.select ||
+          event.logicalKey == LogicalKeyboardKey.space) {
+        final held = _okDown != null
+            ? DateTime.now().difference(_okDown!)
+            : Duration.zero;
+        _okDown = null;
+
+        if (!_longHandled && held.inMilliseconds >= 800) {
+          _longHandled = true;
+          setState(() => _showChannelList = !_showChannelList);
+        } else if (!_longHandled) {
+          _togglePlayPause();
+        }
+        _longHandled = false;
+      }
+    }
   }
 
   @override
   void dispose() {
-    _settingsFocus.dispose();
-    _blinkController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _controlsTimer?.cancel();
+    _numberTimer?.cancel();
+    _retryTimer?.cancel();
+    _blinkTimer?.cancel();
+    try { WakelockPlus.disable(); } catch (_) {}
+    if (_ctrl != null && _ctrlListener != null) {
+      _ctrl!.removeListener(_ctrlListener!);
+    }
+    _ctrl?.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isTyping = widget.typedNumber.isNotEmpty;
+    if (_appState == null) {
+      return const Scaffold(backgroundColor: Colors.black);
+    }
 
-    return Stack(
-      children: [
-        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম / টাইপিং মোড + লাইভ) ==========
-        Positioned(
-          top: 20,
-          left: 20,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.8),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isTyping 
-                    ? Colors.yellow.withOpacity(0.8) // টাইপ করার সময় বর্ডার হলুদ হবে
-                    : AppTheme.primary.withOpacity(0.4), // সাধারণ অবস্থায় নরমাল থিম বর্ডার
-                width: isTyping ? 2 : 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 4),
-                )
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+    final ch = _appState!.currentChannel;
+    final initialized =
+        _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
+    final isLive = _ctrl?.value.duration == Duration.zero ||
+        _ctrl?.value.duration == null;
+
+    return KeyboardListener(
+      focusNode: _focus,
+      autofocus: true,
+      onKeyEvent: _handleKey,
+      // ===== PopScope যুক্ত করার মাধ্যমে ব্যাক বাটন লক ও জোরপূর্বক ডায়ালগ রেন্ডার করা হলো =====
+      child: PopScope(
+        canPop: false, // সিস্টেম নেভিগেশনকে নিজে থেকে পপ হতে বাধা দেবে
+        onPopInvokedWithResult: (didPop, result) {
+          if (didPop) return;
+          _handleExit(); // ব্যাক প্রেস হওয়া মাত্রই আমাদের কাস্টম লজিক এক্সিকিউট হবে
+        },
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: GestureDetector(
+            onTap: _toggleControls,
+            onHorizontalDragEnd: (d) {
+              if (d.primaryVelocity == null) return;
+              if (d.primaryVelocity! < -300) _switchChannel(1);
+              if (d.primaryVelocity! > 300) _switchChannel(-1);
+            },
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // ১. প্লে/পজ স্ট্যাটাস আইকন (কন্ট্রোলারের সাথে ম্যাচিং)
-                Icon(
-                  widget.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                  color: widget.isPlaying ? AppTheme.primary : Colors.redAccent,
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-
-                // ২. "CH " টেক্সট
-                Text(
-                  'CH ',
-                  style: TextStyle(
-                    color: isTyping ? Colors.yellow.withOpacity(0.7) : Colors.white54,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                  ),
-                ),
-                
-                // ৩. চ্যানেল নম্বর
-                Text(
-                  isTyping ? widget.typedNumber : '${widget.currentIndex + 1}',
-                  style: TextStyle(
-                    color: isTyping ? Colors.yellow : AppTheme.primary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1,
-                  ),
-                ),
-
-                // ৪. চ্যানেল নাম এবং লাইভ ব্লিংকার (টাইপ না করলে কার্ডের ভেতরে ঢুকবে)
-                if (!isTyping) ...[
-                  const SizedBox(width: 12),
-                  Container(
-                    height: 18,
-                    width: 1,
-                    color: Colors.white24,
-                  ),
-                  const SizedBox(width: 12),
-                  
-                  // মূল চ্যানেলের নাম
-                  Text(
-                    widget.channel.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-
-                  const SizedBox(width: 14),
-                  Container(
-                    height: 18,
-                    width: 1,
-                    color: Colors.white24,
-                  ),
-                  const SizedBox(width: 12),
-
-                  // ৫. LIVE ব্লিংকিং ইন্ডিকেটর (লাল ডট + LIVE টেক্সট)
-                  FadeTransition(
-                    opacity: _blinkController,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
+                // ===== ভিডিও প্লেয়ার (ফুল স্ক্রিন এক্স-ওয়াই ফিট / BoxFit.fill) =====
+                if (initialized)
+                  Positioned.fill(
+                    child: SizedBox.expand(
+                      child: FittedBox(
+                        fit: BoxFit.fill, // যেকোনো অ্যাসপেক্ট রেশিওকে পুরো স্ক্রিনে স্ট্রেচ ফিট করবে
+                        child: SizedBox(
+                          width: _ctrl!.value.size.width,
+                          height: _ctrl!.value.size.height,
+                          child: VideoPlayer(_ctrl!),
                         ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
+                  )
+                else
+                  LoadingOverlay(
+                    hasError: _hasStreamError,
+                    retryCount: _retryCount,
+                    maxRetry: _maxRetry,
+                    channelName: ch.name,
+                    onRetry: () {
+                      _retryCount = 0;
+                      setState(() {
+                        _hasStreamError = false;
+                        _activeChannelId = null;
+                    });
+                    _initController();
+                  },
+                  onNext: () => _switchChannel(1),
+                ),
+
+                // ===== টপ প্যানেল =====
+                if (_showControls)
+                  PlayerTopPanel(
+                    channel: ch,
+                    currentIndex: _appState!.currentChannelIndex,
+                    totalChannels: _appState!.channels.length,
+                    onSettings: _openSettings,
+                    typedNumber: _typed,
+                    isPlaying: _ctrl?.value.isPlaying ?? false,
                   ),
-                ],
+
+                // ===== বটম কন্ট্রোল বার =====
+                if (_showControls && initialized)
+                  PlayerBottomBar(
+                    ctrl: _ctrl!,
+                    isLive: isLive,
+                    liveBlink: _liveBlink,
+                    onPlayPause: _togglePlayPause,
+                    onExit: _handleExit,
+                    onChannelUp: () => _switchChannel(-1),
+                    onChannelDown: () => _switchChannel(1),
+                  ),
+
+                // ===== চ্যানেল লিস্ট সাইড প্যানেল =====
+                if (_showChannelList)
+                  ChannelListPanel(
+                    channels: _appState!.channels,
+                    currentIndex: _appState!.currentChannelIndex,
+                    onSelect: (i) {
+                      setState(() => _showChannelList = false);
+                      _switchToIndex(i);
+                    },
+                    onClose: () =>
+                        setState(() => _showChannelList = false),
+                  ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
 
-        // ========== TOP-RIGHT: সেটিংস আইকন (রিমোট ফোকাস লজিকসহ) ==========
-        Positioned(
-          top: 20,
-          right: 20,
-          child: Focus(
-            focusNode: _settingsFocus,
-            onFocusChange: (hasFocus) {
-              // রিমোট দিয়ে সিলেক্ট করলেই কেবল ব্যাকগ্রাউন্ড এবং বর্ডার অন হবে
-              setState(() {
-                _isSettingsFocused = hasFocus;
-              });
-            },
-            onKeyEvent: (node, event) {
-              if (event is KeyDownEvent &&
-                  (event.logicalKey == LogicalKeyboardKey.enter ||
-                      event.logicalKey == LogicalKeyboardKey.select ||
-                      event.logicalKey == LogicalKeyboardKey.space)) {
-                widget.onSettings();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: GestureDetector(
-              onTap: widget.onSettings,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  // ফোকাস হলে থিম কালার গ্লো পাবে, না হলে সম্পূর্ণ ট্রান্সপারেন্ট (নরমাল আইকন)
-                  color: _isSettingsFocused
-                      ? AppTheme.primary.withOpacity(0.25)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    // ফোকাস হলে বর্ডার দেখাবে, না হলে হাইড থাকবে
-                    color: _isSettingsFocused ? AppTheme.primary : Colors.transparent,
-                    width: _isSettingsFocused ? 2 : 1,
+// ========== Settings Dialog Widget ==========
+
+class _SettingsDialog extends StatefulWidget {
+  const _SettingsDialog({
+    required this.state,
+    required this.onAppInfo,
+    required this.onNavigateSettings,
+    required this.onClose,
+  });
+
+  final AppState state;
+  final VoidCallback onAppInfo;
+  final VoidCallback onNavigateSettings;
+  final VoidCallback onClose;
+
+  @override
+  State<_SettingsDialog> createState() => _SettingsDialogState();
+}
+
+class _SettingsDialogState extends State<_SettingsDialog> {
+  final List<FocusNode> _focusNodes = List.generate(5, (i) => FocusNode());
+  int _focusedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNodes[0].requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final n in _focusNodes) n.dispose();
+    super.dispose();
+  }
+
+  void _moveFocus(int dir) {
+    final next = (_focusedIndex + dir).clamp(0, _focusNodes.length - 1);
+    setState(() => _focusedIndex = next);
+    _focusNodes[next].requestFocus();
+  }
+
+  KeyEventResult _onKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _moveFocus(1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _moveFocus(-1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.escape ||
+        event.logicalKey == LogicalKeyboardKey.goBack) {
+      widget.onClose();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _focusableItem({
+    required int index,
+    required Widget child,
+    required VoidCallback onActivate,
+  }) {
+    final isFocused = _focusedIndex == index;
+    return Focus(
+      focusNode: _focusNodes[index],
+      onFocusChange: (v) {
+        if (v) setState(() => _focusedIndex = index);
+      },
+      onKeyEvent: (_, e) {
+        if (e is KeyDownEvent &&
+            (e.logicalKey == LogicalKeyboardKey.enter ||
+                e.logicalKey == LogicalKeyboardKey.select)) {
+          onActivate();
+          return KeyEventResult.handled;
+        }
+        return _onKey(e);
+      },
+      child: GestureDetector(
+        onTap: onActivate,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            color: isFocused
+                ? AppTheme.primary.withOpacity(0.15)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isFocused ? AppTheme.primary : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = widget.state;
+    return AlertDialog(
+      backgroundColor: Colors.black.withOpacity(0.95),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppTheme.primary.withOpacity(0.5), width: 1.5),
+      ),
+      title: const Row(
+        children: [
+          Icon(Icons.settings, color: Colors.white),
+          SizedBox(width: 10),
+          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _focusableItem(
+            index: 0,
+            onActivate: () => state.togglePlayerBoot(),
+            child: SwitchListTile(
+              title: const Text('Boot Player (অটো প্লেয়ার)',
+                  style: TextStyle(color: Colors.white)),
+              subtitle: Text(
+                'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
+                style: TextStyle(
+                    color: Colors.white.withOpacity(0.55), fontSize: 12),
+              ),
+              activeColor: AppTheme.primary,
+              value: state.isPlayerBootEnabled,
+              onChanged: (v) => state.togglePlayerBoot(),
+            ),
+          ),
+          if (state.isAuthenticated)
+            _focusableItem(
+              index: 1,
+              onActivate: () {},
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: ListTile(
+                  leading: const Icon(Icons.stars_rounded, color: Color(0xFFEAB308)),
+                  title: Text(
+                    state.userProfile?.email ?? '',
+                    style: const TextStyle(color: Colors.white),
                   ),
-                ),
-                child: Icon(
-                  Icons.settings_rounded,
-                  // ফোকাসড অবস্থায় আইকনটি উজ্জ্বল সাদা হবে, সাধারণ অবস্থায় একটু হালকা (white70) থাকবে
-                  color: _isSettingsFocused ? AppTheme.primary : Colors.white70,
-                  size: 28,
+                  subtitle: Text(
+                    'প্ল্যান: ${state.userProfile?.plan ?? ''}',
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
                 ),
               ),
             ),
+          const Divider(color: Colors.white12, height: 20),
+          _focusableItem(
+            index: 2,
+            onActivate: widget.onAppInfo,
+            child: ListTile(
+              leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
+              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
+              subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+            ),
           ),
+        ],
+      ),
+      actionsPadding: const EdgeInsets.only(bottom: 16, right: 16),
+      actions: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            _focusableItem(
+              index: 3,
+              onActivate: widget.onNavigateSettings,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: const Text('সেটিংস', style: TextStyle(color: Colors.white70)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            _focusableItem(
+              index: 4,
+              onActivate: widget.onClose,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('বন্ধ', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
         ),
       ],
     );
