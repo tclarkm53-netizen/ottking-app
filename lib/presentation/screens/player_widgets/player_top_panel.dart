@@ -68,7 +68,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // 'CH ' প্রিফিক্স ট্যাবেল
+                // 'CH ' প্রিফিক্স লেবেল
                 Text(
                   'CH ',
                   style: TextStyle(
@@ -97,21 +97,18 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
                     margin: const EdgeInsets.symmetric(horizontal: 12),
                     color: Colors.white.withOpacity(0.2),
                   ),
-                  // টেক্সট ওভারফ্লো সেফটি সহ চ্যানেল নাম
-                  ConstraintsTransformBox(
-                    constraintsTransform: const ConstraintsTransformBox.unconstrained(),
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 320), // টিভির স্ক্রিন অনুযায়ী স্ট্যান্ডার্ড সাইড উইডথ
-                      child: Text(
-                        widget.channel.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
+                  // টেক্সট ওভারফ্লো সেফটি সহ চ্যানেল নাম (টিভি স্ক্রিনের জন্য অপ্টিমাইজড)
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 280), // নামের জন্য সর্বোচ্চ উইডথ ফিক্সড
+                    child: Text(
+                      widget.channel.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
                       ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                 ],
