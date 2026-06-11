@@ -9,8 +9,14 @@ import '../../../core/constants/app_constants.dart';
 import '../../providers/app_state.dart';
 
 class HomeTopBar extends StatelessWidget {
-  const HomeTopBar({super.key, required this.appState});
   final AppState appState;
+  final FocusNode settingsFocusNode; //HomeScreen থেকে পাঠানো নোডটি রিসিভ করার ভ্যারিয়েবল
+
+  const HomeTopBar({
+    super.key, 
+    required this.appState,
+    required this.settingsFocusNode, // কনস্ট্রাক্টরে রিকোয়ার্ড করা হলো
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +116,7 @@ class HomeTopBar extends StatelessWidget {
 
           // ── Settings button (focusable) ──────────────────────────────
           _TvIconButton(
+            focusNode: settingsFocusNode, // এখানে HomeScreen থেকে আসা ফোকাস নোডটি পাস করা হলো
             icon: Icons.settings_rounded,
             tooltip: 'সেটিংস',
             onTap: () => Navigator.pushNamed(context, '/settings'),
@@ -125,10 +132,13 @@ class _TvIconButton extends StatefulWidget {
   const _TvIconButton({
     required this.icon,
     required this.onTap,
+    required this.focusNode, // ফোকাস নোড প্যারামিটার যুক্ত করা হলো
     this.tooltip = '',
   });
+
   final IconData icon;
   final VoidCallback onTap;
+  final FocusNode focusNode; // রিসিভার ভ্যারিয়েবল
   final String tooltip;
 
   @override
@@ -143,9 +153,9 @@ class _TvIconButtonState extends State<_TvIconButton> {
     return Tooltip(
       message: widget.tooltip,
       child: Focus(
+        focusNode: widget.focusNode, // কাস্টম ফোকাস নোডটি এখানে অ্যাসাইন করা হলো
         onFocusChange: (v) => setState(() => _focused = v),
         onKeyEvent: (_, e) {
-          // এটি এখন সঠিকভাবে কাজ করবে কারণ services.dart ইমপোর্ট করা হয়েছে
           if (e is KeyDownEvent &&
               (e.logicalKey == LogicalKeyboardKey.enter ||
                   e.logicalKey == LogicalKeyboardKey.select)) {
