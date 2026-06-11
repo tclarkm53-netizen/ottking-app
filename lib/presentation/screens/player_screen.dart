@@ -203,11 +203,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
+  // [UPDATED] বাফারিং শেষে অটো-প্লে করার লজিক যুক্ত করা হয়েছে
   void _onCtrlUpdate() {
     if (!mounted) return;
+    
     if (_ctrl?.value.hasError == true) {
       _scheduleRetry();
+      return;
     }
+
+    // বাফার লোড শেষ হলে যদি প্লেয়ার আটকে থাকে তবে ফোর্স প্লে করবে
+    if (_ctrl != null && _ctrl!.value.isInitialized) {
+      if (!_ctrl!.value.isBuffering && 
+          !_ctrl!.value.isPlaying && 
+          !_hasStreamError && 
+          !_isLoading) {
+        _ctrl!.play();
+      }
+    }
+    
     setState(() {});
   }
 
@@ -548,7 +562,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               if (initialized)
                 SizedBox.expand(
                   child: FittedBox(
-                    fit: BoxFit.contain,
+                    // [UPDATED] BoxFit.contain থেকে BoxFit.fill এ পরিবর্তন করা হয়েছে (fitXY stretch)
+                    fit: BoxFit.fill,
                     child: SizedBox(
                       width: _ctrl!.value.size.width,
                       height: _ctrl!.value.size.height,
@@ -611,7 +626,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 }
 
-// ========== Settings Dialog Widget (Dynamic Focus Fix) ==========
+// ========== Settings Dialog Widget ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -631,7 +646,6 @@ class _SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<_SettingsDialog> {
-  // কন্ডিশনাল ফোকাস নোড ম্যানেজমেন্টের জন্য ডায়নামিক লিস্ট
   final List<FocusNode> _focusNodes = [];
   final List<int> _itemIndices = [];
   int _focusedIndex = 0;
@@ -640,10 +654,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   void initState() {
     super.initState();
     
-    // রেন্ডার হওয়া পসিবল আইটেমের সংখ্যার উপর ভিত্তি করে ডাইনামিকলি ফোকাস ক্রিয়েট করা
-    int totalItems = 3; // Boot, App Info, Settings Button
+    int totalItems = 3; 
     if (widget.state.isAuthenticated) {
-      totalItems = 4; // + User profile
+      totalItems = 4; 
     }
 
     for (int i = 0; i < totalItems; i++) {
@@ -730,8 +743,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    
-    // রিয়েলটাইম লিস্ট ইনডেক্স ট্র্যাক করার জন্য ভ্যারিয়েবল
     int currentVisualIndex = 0;
 
     return AlertDialog(
@@ -750,7 +761,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ১. Boot Player টগল
           _focusableItem(
             listIndex: currentVisualIndex++,
             onActivate: () => state.togglePlayerBoot(),
@@ -766,7 +776,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             ),
           ),
 
-          // ২. User info (ডাইনামিক রেন্ডারিং ফিক্সড)
           if (state.isAuthenticated)
             _focusableItem(
               listIndex: currentVisualIndex++,
@@ -789,7 +798,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
           const Divider(color: Colors.white12, height: 20),
 
-          // ৩. অ্যাপ তথ্য
           _focusableItem(
             listIndex: currentVisualIndex++,
             onActivate: widget.onAppInfo,
@@ -804,7 +812,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         ],
       ),
       actions: [
-        // ৪. সেটিংস পেজে যাওয়ার বাটন
         _focusableItem(
           listIndex: currentVisualIndex++,
           onActivate: widget.onNavigateSettings,
