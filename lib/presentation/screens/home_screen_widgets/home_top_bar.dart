@@ -1,6 +1,8 @@
 // lib/presentation/screens/home_screen_widgets/home_top_bar.dart
 
 import 'package:flutter/material.dart';
+// কীবোর্ড এবং রিমোটের কি হ্যান্ডেল করার জন্য এই ইমপোর্টটি দরকার ছিল
+import 'package:flutter/services.dart'; 
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/constants/app_constants.dart';
@@ -143,6 +145,7 @@ class _TvIconButtonState extends State<_TvIconButton> {
       child: Focus(
         onFocusChange: (v) => setState(() => _focused = v),
         onKeyEvent: (_, e) {
+          // এটি এখন সঠিকভাবে কাজ করবে কারণ services.dart ইমপোর্ট করা হয়েছে
           if (e is KeyDownEvent &&
               (e.logicalKey == LogicalKeyboardKey.enter ||
                   e.logicalKey == LogicalKeyboardKey.select)) {
