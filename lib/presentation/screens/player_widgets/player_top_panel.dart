@@ -17,7 +17,7 @@ class PlayerTopPanel extends StatefulWidget {
   final int currentIndex;
   final int totalChannels;
   final VoidCallback onSettings;
-  final String typedNumber; // নম্বর টাইপ হচ্ছে কিনা
+  final String typedNumber;
 
   @override
   State<PlayerTopPanel> createState() => _PlayerTopPanelState();
@@ -25,6 +25,7 @@ class PlayerTopPanel extends StatefulWidget {
 
 class _PlayerTopPanelState extends State<PlayerTopPanel> {
   final FocusNode _settingsFocus = FocusNode(debugLabel: 'settings-btn');
+  bool _isSettingsFocused = false; // সেটিংস বাটনের ফোকাস ট্র্যাক করার জন্য
 
   @override
   void dispose() {
@@ -38,78 +39,80 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
 
     return Stack(
       children: [
-        // ========== TOP-LEFT: চ্যানেল নম্বার + নাম ==========
+        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম) ==========
         Positioned(
           top: 20,
           left: 20,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // চ্যানেল নম্বার বক্স (সবসময় দেখায়)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.75),
-                  borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: AppTheme.primary.withOpacity(0.6)),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'CH ',
-                      style: TextStyle(
-                        color: Colors.white54,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    Text(
-                      isTyping
-                          ? widget.typedNumber
-                          : '${widget.currentIndex + 1}',
-                      style: TextStyle(
-                        color: isTyping ? Colors.yellow : AppTheme.primary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isTyping 
+                    ? Colors.yellow.withOpacity(0.8) // টাইপ করার সময় বর্ডার হলুদ হবে
+                    : AppTheme.primary.withOpacity(0.6),
+                width: isTyping ? 2 : 1,
               ),
-              const SizedBox(height: 8),
-              // চ্যানেল নাম বক্স — শুধু typing না হলে দেখায়
-              AnimatedOpacity(
-                opacity: isTyping ? 0.0 : 1.0,
-                duration: const Duration(milliseconds: 200),
-                child: IgnorePointer(
-                  ignoring: isTyping,
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 220),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.12)),
-                    ),
-                    child: Text(
-                      widget.channel.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // "CH " টেক্সট
+                Text(
+                  'CH ',
+                  style: TextStyle(
+                    color: isTyping ? Colors.yellow.withOpacity(0.7) : Colors.white54,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
                   ),
                 ),
-              ),
-            ],
+                
+                // চ্যানেল নম্বর (টাইপ করলে টাইপ করা সংখ্যা, নাহলে কারেন্ট ইনডেক্স)
+                Text(
+                  isTyping ? widget.typedNumber : '${widget.currentIndex + 1}',
+                  style: TextStyle(
+                    color: isTyping ? Colors.yellow : AppTheme.primary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+
+                // চ্যানেল নাম (শুধুমাত্র টাইপ না করলে এই অংশটুকু কার্ডের ভেতর ঢুকবে)
+                if (!isTyping) ...[
+                  const SizedBox(width: 12),
+                  // একটি ছোট ভার্টিক্যাল ডিভাইডার লাইন (দেখতে সুন্দর লাগবে)
+                  Container(
+                    height: 18,
+                    width: 1,
+                    color: Colors.white24,
+                  ),
+                  const SizedBox(width: 12),
+                  
+                  // মূল চ্যানেলের নাম
+                  Text(
+                    widget.channel.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
           ),
         ),
 
@@ -119,6 +122,11 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
           right: 20,
           child: Focus(
             focusNode: _settingsFocus,
+            onFocusChange: (hasFocus) {
+              setState(() {
+                _isSettingsFocused = hasFocus;
+              });
+            },
             onKeyEvent: (node, event) {
               if (event is KeyDownEvent &&
                   (event.logicalKey == LogicalKeyboardKey.enter ||
@@ -129,35 +137,29 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
               }
               return KeyEventResult.ignored;
             },
-            child: Builder(
-              builder: (ctx) {
-                final focused = Focus.of(ctx).hasFocus;
-                return GestureDetector(
-                  onTap: widget.onSettings,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: focused
-                          ? AppTheme.primary.withOpacity(0.25)
-                          : Colors.black.withOpacity(0.55),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: focused
-                            ? AppTheme.primary
-                            : Colors.white.withOpacity(0.15),
-                        width: focused ? 2 : 1,
-                      ),
-                    ),
-                    child: Icon(
-                      Icons.settings_rounded,
-                      color:
-                          focused ? AppTheme.primary : Colors.white70,
-                      size: 28,
-                    ),
+            child: GestureDetector(
+              onTap: widget.onSettings,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _isSettingsFocused
+                      ? AppTheme.primary.withOpacity(0.25)
+                      : Colors.black.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _isSettingsFocused
+                        ? AppTheme.primary
+                        : Colors.white.withOpacity(0.15),
+                    width: _isSettingsFocused ? 2 : 1,
                   ),
-                );
-              },
+                ),
+                child: Icon(
+                  Icons.settings_rounded,
+                  color: _isSettingsFocused ? AppTheme.primary : Colors.white70,
+                  size: 28,
+                ),
+              ),
             ),
           ),
         ),
