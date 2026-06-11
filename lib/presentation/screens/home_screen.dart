@@ -19,8 +19,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final FocusNode _rootFocusNode = FocusNode(debugLabel: 'home-root');
-  
-  // সেটিংস বাটনের জন্য একটি ডেডিকেটেড ফোকাস নোড
   final FocusNode _settingsFocusNode = FocusNode(debugLabel: 'home-settings');
   
   int _selectedCategoryIndex = 0;
@@ -37,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
-    // প্রথম ফ্রেমে 'All' ক্যাটাগরিতে ফোকাস সেট করার জন্য
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_catNodes.isNotEmpty && mounted) {
         _catNodes[0].requestFocus();
@@ -54,7 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // রুট কি-বোর্ড ইভেন্ট হ্যান্ডলার (Back বাটন এক্সিট)
   void _handleKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
     if (event.logicalKey == LogicalKeyboardKey.escape ||
@@ -63,16 +59,21 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ক্যাটাগরি চেঞ্জ করার মেথড
   void _changeCategory(int index) {
     if (_selectedCategoryIndex == index) return;
     setState(() {
       _selectedCategoryIndex = index;
       
-      // নতুন ক্যাটাগরি সিলেক্ট হলে চ্যানেলের ফোকাস নোডগুলো রিসেট করতে হবে 
-      // যাতে ওল্ড ইনডেক্সের নোড নিয়ে ক্র্যাশ না করে
+      // নোড ক্লিয়ার করার সময় ডিসপোজ করা জরুরি
       for (final n in _chNodes) n.dispose();
       _chNodes.clear();
+    });
+    
+    // ক্যাটাগরি চেঞ্জ হওয়ার পর গ্রিড রেন্ডার হতে সামান্য সময় নেয়, তাই একটু দেরিতে ফোকাস দেওয়া ভালো
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_catNodes.isNotEmpty && _catNodes.length > index) {
+        _catNodes[index].requestFocus();
+      }
     });
   }
 
@@ -81,26 +82,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final appState = context.watch<AppState>();
     final size = MediaQuery.of(context).size;
 
-    // ১. ক্যাটাগরি লিস্ট প্রিপেয়ার করা
     final cats = <Map<String, String>>[
       {'name': 'All', 'icon': '🌐'},
       ...appState.categories.map((c) => {'name': c.name, 'icon': c.icon}),
     ];
 
-    // ক্যাটাগরি অনুযায়ী ফোকাস নোড ম্যানেজমেন্ট
     while (_catNodes.length < cats.length) {
       _catNodes.add(FocusNode(debugLabel: 'cat-${_catNodes.length}'));
     }
 
-    // ২. রিয়েল-টাইম চ্যানেল ফিল্টারিং (ফিক্সড লজিক)
     final currentCat = cats[_selectedCategoryIndex]['name']!;
     final filtered = appState.channels.where((ch) {
       if (currentCat == 'All') return true;
-      // category name এর স্পেস এবং কেইস সেন্সিটিভিটি হ্যান্ডেল করা হয়েছে
       return ch.category.trim().toLowerCase() == currentCat.trim().toLowerCase();
     }).toList();
 
-    // ফিল্টারড চ্যানেলের সংখ্যার ওপর ভিত্তি করে নোড জেনারেট করা
+    // ফিল্টারড লিস্ট অনুযায়ী নতুন ফোকাস নোড তৈরি
     while (_chNodes.length < filtered.length) {
       _chNodes.add(FocusNode(debugLabel: 'chan-${_chNodes.length}'));
     }
@@ -114,13 +111,10 @@ class _HomeScreenState extends State<HomeScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // ── Top bar (সেটিংস ফোকাস নোড পাস করা হয়েছে) ────────────────
               HomeTopBar(
                 appState: appState,
                 settingsFocusNode: _settingsFocusNode,
               ),
-
-              // ── Main split view ──────────────────────────────────────
               Expanded(
                 child: appState.isLoading
                     ? Center(
@@ -134,24 +128,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ── Sidebar (ক্যাটাগরি লিস্ট) ──────────────────────
+                            // ── Sidebar (ক্যাটাগরি) ──────────────────────
                             SizedBox(
                               width: size.width * 0.18,
                               child: Focus(
-                                // অল বা প্রথম ক্যাটাগরি থেকে UP টিপলে সেটিংসে যাবে
                                 onKeyEvent: (node, event) {
-                                  if (event is KeyDownEvent &&
-                                      event.logicalKey == LogicalKeyboardKey.arrowUp &&
-                                      _selectedCategoryIndex == 0) {
-                                    _settingsFocusNode.requestFocus();
-                                    return KeyEventResult.handled;
-                                  }
-                                  // রাইট বাটন টিপলে চ্যানেল গ্রিডের প্রথম চ্যানেলে ফোকাস যাবে
-                                  if (event is KeyDownEvent &&
-                                      event.logicalKey == LogicalKeyboardKey.arrowRight) {
-                                    if (_chNodes.isNotEmpty) {
-                                      _chNodes[0].requestFocus();
+                                  if (event is KeyDownEvent) {
+                                    if (event.logicalKey == LogicalKeyboardKey.arrowUp &&
+                                        _selectedCategoryIndex == 0) {
+                                      _settingsFocusNode.requestFocus();
                                       return KeyEventResult.handled;
+                                    }
+                                    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                                      if (_chNodes.isNotEmpty) {
+                                        _chNodes[0].requestFocus(); // প্রথম চ্যানেলে ফোকাস যাবে
+                                        return KeyEventResult.handled;
+                                      }
                                     }
                                   }
                                   return KeyEventResult.ignored;
@@ -167,26 +159,25 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             const SizedBox(width: 20),
 
-                            // ── Channel grid (চ্যানেল লিস্ট) ──────────────────
+                            // ── Channel Grid (চ্যানেল লিস্ট) ──────────────────
                             Expanded(
-                              child: Focus(
-                                // চ্যানেল গ্রিডে থাকা অবস্থায় লেফট ক্লিক করলে আবার ক্যাটাগরিতে ফিরে আসবে
-                                onKeyEvent: (node, event) {
-                                  if (event is KeyDownEvent &&
-                                      event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-                                    // চ্যানেল লিস্টের একদম বামের কলামে থাকলে ক্যাটাগরিতে ব্যাক করবে
-                                    // (সাধারণত GridView এর কলাম সংখ্যা অনুযায়ী হ্যান্ডেল করা ভালো, 
-                                    // তবে ফোর্সভলি ক্যাটাগরি নোড রিকোয়েস্ট করা হলো নিরাপদ নেভিগেশনের জন্য)
-                                    _catNodes[_selectedCategoryIndex].requestFocus();
-                                    return KeyEventResult.handled;
-                                  }
-                                  return KeyEventResult.ignored;
-                                },
-                                child: ChannelGrid(
-                                  channels: filtered,
-                                  chNodes: _chNodes,
-                                  appState: appState,
-                                  categoryName: currentCat,
+                              child: FocusTraversalGroup(
+                                child: Focus(
+                                  onKeyEvent: (node, event) {
+                                    if (event is KeyDownEvent &&
+                                        event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                                      // বামে চাপলে বর্তমান সিলেক্টেড ক্যাটাগরিতে ফেরত যাবে
+                                      _catNodes[_selectedCategoryIndex].requestFocus();
+                                      return KeyEventResult.handled;
+                                    }
+                                    return KeyEventResult.ignored;
+                                  },
+                                  child: ChannelGrid(
+                                    channels: filtered,
+                                    chNodes: _chNodes, // এই নোডগুলো ChannelGrid-এর ভেতর পাস হচ্ছে
+                                    appState: appState,
+                                    categoryName: currentCat,
+                                  ),
                                 ),
                               ),
                             ),
