@@ -11,7 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 import 'player_widgets/player_top_panel.dart';
 import 'player_widgets/player_bottom_bar.dart';
-import 'channel_list_panel.dart';
+import 'player_widgets/channel_list_panel.dart';
 import 'player_widgets/loading_overlay.dart';
 import 'player_widgets/app_info_dialog.dart';
 
@@ -22,7 +22,8 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver {
+class _PlayerScreenState extends State<PlayerScreen>
+    with WidgetsBindingObserver {
   final FocusNode _focus = FocusNode(debugLabel: 'player-root');
 
   VideoPlayerController? _ctrl;
@@ -443,16 +444,23 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 
   // ========== Key Handler ==========
+  // নিয়ম:
+  //  - কন্ট্রোলার দেখা যাক বা না যাক, p+/p- (channelUp/Down, pageUp/Down) → চ্যানেল চেঞ্জ
+  //  - কন্ট্রোলার দেখা: ↑↓ → চ্যানেল চেঞ্জ, ←→ → ব্যবহার নেই (bottom bar নিজেই হ্যান্ডেল করে)
+  //  - আগের ← → আইকন ইভেন্ট (AppInfo, Settings) সরানো হয়েছে
+  //  - Settings এখন শুধু top-right settings বোতাম থেকে খোলে
 
   void _handleKey(KeyEvent event) {
     final label = event.logicalKey.keyLabel;
 
     if (event is KeyDownEvent) {
+      // সংখ্যা ইনপুট
       if (RegExp(r'^[0-9]$').hasMatch(label)) {
         _handleNumberInput(label);
         return;
       }
 
+      // p+ / p- / channel keys — সর্বদা চ্যানেল চেঞ্জ
       if (event.logicalKey == LogicalKeyboardKey.channelUp ||
           event.logicalKey == LogicalKeyboardKey.pageUp) {
         _switchChannel(-1);
@@ -464,6 +472,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
 
+      // ↑↓ — চ্যানেল চেঞ্জ
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
         _switchChannel(-1);
         return;
@@ -473,6 +482,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
 
+      // OK বোতাম — লং প্রেস চেক শুরু
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -480,6 +490,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _longHandled = false;
       }
 
+      // যেকোনো কী তে কন্ট্রোল দেখান
       if (!_showControls) {
         setState(() => _showControls = true);
         _startControlsTimer();
@@ -487,6 +498,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
       _startControlsTimer();
 
+      // ESC — এক্সিট
       if (event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.goBack) {
         _handleExit();
@@ -557,17 +569,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ===== পরিবর্তন: ভিডিও ফুল স্ক্রিন এক্স-ওয়াই ফিট (X-Y Stretch Fit) =====
+              // ===== ভিডিও প্লেয়ার =====
               if (initialized)
-                Positioned.fill(
-                  child: SizedBox.expand(
-                    child: FittedBox(
-                      fit: BoxFit.fill, // এটি ভিডিও রেশিও যাই হোক না কেন জোর করে ফুল স্ক্রিন করবে
-                      child: SizedBox(
-                        width: _ctrl!.value.size.width,
-                        height: _ctrl!.value.size.height,
-                        child: VideoPlayer(_ctrl!),
-                      ),
+                SizedBox.expand(
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: SizedBox(
+                      width: _ctrl!.value.size.width,
+                      height: _ctrl!.value.size.height,
+                      child: VideoPlayer(_ctrl!),
                     ),
                   ),
                 )
@@ -588,7 +598,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   onNext: () => _switchChannel(1),
                 ),
 
-              // ===== টপ প্যানেল =====
+              // ===== টপ প্যানেল (top-left: CH+Name, top-right: Settings) =====
               if (_showControls)
                 PlayerTopPanel(
                   channel: ch,
@@ -596,7 +606,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
                   totalChannels: _appState!.channels.length,
                   onSettings: _openSettings,
                   typedNumber: _typed,
-                  isPlaying: _ctrl?.value.isPlaying ?? false,
                 ),
 
               // ===== বটম কন্ট্রোল বার =====
@@ -651,7 +660,8 @@ class _SettingsDialog extends StatefulWidget {
 }
 
 class _SettingsDialogState extends State<_SettingsDialog> {
-  final List<FocusNode> _focusNodes = List.generate(5, (i) => FocusNode());
+  // ফোকাসযোগ্য আইটেমগুলো
+  final List<FocusNode> _focusNodes = List.generate(4, (i) => FocusNode());
   int _focusedIndex = 0;
 
   @override
@@ -739,18 +749,20 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       backgroundColor: Colors.black.withOpacity(0.95),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: AppTheme.primary.withOpacity(0.5), width: 1.5),
+        side: BorderSide(color: AppTheme.primary, width: 1.5),
       ),
       title: const Row(
         children: [
           Icon(Icons.settings, color: Colors.white),
           SizedBox(width: 10),
-          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
+          Text('প্লেয়ার সেটিংস',
+              style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ১. Boot Player টগল
           _focusableItem(
             index: 0,
             onActivate: () => state.togglePlayerBoot(),
@@ -760,13 +772,16 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               subtitle: Text(
                 'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.55), fontSize: 12),
+                    color: Colors.white.withOpacity(0.55),
+                    fontSize: 12),
               ),
               activeColor: AppTheme.primary,
               value: state.isPlayerBootEnabled,
               onChanged: (v) => state.togglePlayerBoot(),
             ),
           ),
+
+          // ২. User info (যদি লগ ইন থাকে)
           if (state.isAuthenticated)
             _focusableItem(
               index: 1,
@@ -774,55 +789,55 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: ListTile(
-                  leading: const Icon(Icons.stars_rounded, color: Color(0xFFEAB308)),
+                  leading: const Icon(Icons.stars_rounded,
+                      color: Color(0xFFEAB308)),
                   title: Text(
                     state.userProfile?.email ?? '',
                     style: const TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
                     'প্ল্যান: ${state.userProfile?.plan ?? ''}',
-                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                    style: const TextStyle(
+                        color: Colors.white54, fontSize: 12),
                   ),
                 ),
               ),
             ),
+
           const Divider(color: Colors.white12, height: 20),
+
+          // ৩. অ্যাপ তথ্য — নতুন অপশন
           _focusableItem(
             index: 2,
             onActivate: widget.onAppInfo,
             child: ListTile(
-              leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.info_outline_rounded,
+                  color: AppTheme.primary),
+              title: const Text('অ্যাপ তথ্য (App Info)',
+                  style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
-              trailing: const Icon(Icons.chevron_right, color: Colors.white38),
+                  style:
+                      TextStyle(color: Colors.white54, fontSize: 12)),
+              trailing: const Icon(Icons.chevron_right,
+                  color: Colors.white38),
             ),
           ),
         ],
       ),
-      actionsPadding: const EdgeInsets.only(bottom: 16, right: 16),
       actions: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            _focusableItem(
-              index: 3,
-              onActivate: widget.onNavigateSettings,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: const Text('সেটিংস', style: TextStyle(color: Colors.white70)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            _focusableItem(
-              index: 4,
-              onActivate: widget.onClose,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('বন্ধ', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
+        // সেটিংস পেজে যাও
+        _focusableItem(
+          index: 3,
+          onActivate: widget.onNavigateSettings,
+          child: TextButton(
+            onPressed: widget.onNavigateSettings,
+            child: const Text('সেটিংস',
+                style: TextStyle(color: Colors.white54)),
+          ),
+        ),
+        TextButton(
+          onPressed: widget.onClose,
+          child: Text('বন্ধ', style: TextStyle(color: AppTheme.primary)),
         ),
       ],
     );
