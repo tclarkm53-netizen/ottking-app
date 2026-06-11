@@ -10,6 +10,7 @@ class PlayerTopPanel extends StatefulWidget {
     required this.currentIndex,
     required this.totalChannels,
     required this.onSettings,
+    required this.isPlaying, // প্লেয়ার প্লে নাকি পজ অবস্থায় আছে
     this.typedNumber = '',
   });
 
@@ -17,19 +18,33 @@ class PlayerTopPanel extends StatefulWidget {
   final int currentIndex;
   final int totalChannels;
   final VoidCallback onSettings;
+  final bool isPlaying; 
   final String typedNumber;
 
   @override
   State<PlayerTopPanel> createState() => _PlayerTopPanelState();
 }
 
-class _PlayerTopPanelState extends State<PlayerTopPanel> {
+class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProviderStateMixin {
   final FocusNode _settingsFocus = FocusNode(debugLabel: 'settings-btn');
-  bool _isSettingsFocused = false; // সেটিংস বাটনের ফোকাস ট্র্যাক করার জন্য
+  bool _isSettingsFocused = false;
+  
+  // লাইভ টেক্সট ব্লিংক করানোর জন্য অ্যানিমেশন কন্ট্রোলার
+  late AnimationController _blinkController;
+
+  @override
+  void initState() {
+    super.initState();
+    _blinkController = AnimationController(
+      duration: const Duration(milliseconds: 1000),
+      vsync: this,
+    )..repeat(reverse: true); // অনবরত আসা-যাওয়া করবে (Blink Effect)
+  }
 
   @override
   void dispose() {
     _settingsFocus.dispose();
+    _blinkController.dispose();
     super.dispose();
   }
 
@@ -39,7 +54,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
 
     return Stack(
       children: [
-        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম) ==========
+        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম + প্লে/পজ + লাইভ ব্লিংক) ==========
         Positioned(
           top: 20,
           left: 20,
@@ -51,7 +66,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isTyping 
-                    ? Colors.yellow.withOpacity(0.8) // টাইপ করার সময় বর্ডার হলুদ হবে
+                    ? Colors.yellow.withOpacity(0.8)
                     : AppTheme.primary.withOpacity(0.6),
                 width: isTyping ? 2 : 1,
               ),
@@ -66,7 +81,15 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // "CH " টেক্সট
+                // ১. প্লে/পজ স্ট্যাটাস আইকন (ভিডিও কন্ট্রোলারের সাথে ম্যাচ করা)
+                Icon(
+                  widget.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                  color: widget.isPlaying ? AppTheme.primary : Colors.redAccent,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+
+                // ২. "CH " টেক্সট
                 Text(
                   'CH ',
                   style: TextStyle(
@@ -77,7 +100,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
                   ),
                 ),
                 
-                // চ্যানেল নম্বর (টাইপ করলে টাইপ করা সংখ্যা, নাহলে কারেন্ট ইনডেক্স)
+                // ৩. চ্যানেল নম্বর
                 Text(
                   isTyping ? widget.typedNumber : '${widget.currentIndex + 1}',
                   style: TextStyle(
@@ -88,10 +111,9 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
                   ),
                 ),
 
-                // চ্যানেল নাম (শুধুমাত্র টাইপ না করলে এই অংশটুকু কার্ডের ভেতর ঢুকবে)
+                // ৪. চ্যানেল নাম এবং লাইভ ব্লিংকার (শুধুমাত্র টাইপ না করলে দেখাবে)
                 if (!isTyping) ...[
                   const SizedBox(width: 12),
-                  // একটি ছোট ভার্টিক্যাল ডিভাইডার লাইন (দেখতে সুন্দর লাগবে)
                   Container(
                     height: 18,
                     width: 1,
@@ -109,6 +131,41 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> {
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+
+                  const SizedBox(width: 14),
+                  Container(
+                    height: 18,
+                    width: 1,
+                    color: Colors.white24,
+                  ),
+                  const SizedBox(width: 12),
+
+                  // ৫. LIVE ব্লিংকিং ইন্ডিকেটর
+                  FadeTransition(
+                    opacity: _blinkController,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'LIVE',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ],
