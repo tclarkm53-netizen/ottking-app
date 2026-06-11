@@ -7,7 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../providers/app_state.dart';
 import '../../../presentation/widgets/tv_focus_card.dart';
 
-class ChannelGrid extends StatelessWidget {
+class ChannelGrid extends StatefulWidget {
   const ChannelGrid({
     super.key,
     required this.channels,
@@ -22,6 +22,20 @@ class ChannelGrid extends StatelessWidget {
   final String categoryName;
 
   @override
+  State<ChannelGrid> createState() => _ChannelGridState();
+}
+
+class _ChannelGridState extends State<ChannelGrid> {
+  // টিভি নেভিগেশনে অটো-স্ক্রোল ঠিক রাখার জন্য স্ক্রোল কন্ট্রোলার
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -32,7 +46,7 @@ class ChannelGrid extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                '📺 $categoryName CHANNELS',
+                '📺 ${widget.categoryName} CHANNELS',
                 style: const TextStyle(
                   color: Colors.white38,
                   fontSize: 11,
@@ -42,14 +56,13 @@ class ChannelGrid extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: AppTheme.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '${channels.length}',
+                  '${widget.channels.length}',
                   style: const TextStyle(
                     color: AppTheme.primary,
                     fontSize: 11,
@@ -63,7 +76,7 @@ class ChannelGrid extends StatelessWidget {
 
         // ── Grid ─────────────────────────────────────────────────────────
         Expanded(
-          child: channels.isEmpty
+          child: widget.channels.isEmpty
               ? const Center(
                   child: Text(
                     'কোনো চ্যানেল পাওয়া যায়নি',
@@ -71,34 +84,48 @@ class ChannelGrid extends StatelessWidget {
                   ),
                 )
               : GridView.builder(
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
+                  controller: _scrollController, // স্ক্রোল কন্ট্রোলার অ্যাসাইন করা হলো
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 5,
                     mainAxisSpacing: 12,
                     crossAxisSpacing: 12,
                     childAspectRatio: 1.4,
                   ),
                   physics: const BouncingScrollPhysics(),
-                  itemCount: channels.length,
+                  itemCount: widget.channels.length,
                   itemBuilder: (context, i) {
-                    final ch = channels[i];
-                    final origIdx = appState.channels.indexOf(ch);
-                    final playing =
-                        appState.currentChannelIndex == origIdx;
+                    final ch = widget.channels[i];
+                    final origIdx = widget.appState.channels.indexOf(ch);
+                    final playing = widget.appState.currentChannelIndex == origIdx;
 
-                    return TvFocusCard(
-                      focusNode: chNodes[i],
-                      selected: playing,
-                      padding: EdgeInsets.zero,
-                      onTap: () {
-                        appState.selectChannelByIndex(origIdx);
-                        Navigator.pushNamed(context, '/player');
-                      },
-                      child: ChannelCard(
-                        channel: ch,
-                        isPlaying: playing,
-                      ),
-                    );
+                    // রিমোট দিয়ে নিচে নামার সময় যেন স্ক্রিন স্বয়ংক্রিয়ভাবে স্ক্রোল হয়
+                    return widget.chNodes.length > i 
+                    ? Focus(
+                        onFocusChange: (hasFocus) {
+                          if (hasFocus) {
+                            // ফোকাসড আইটেমটি স্ক্রিনের বাইরে থাকলে তাকে স্ক্রিনে টেনে নিয়ে আসবে
+                            Scrollable.ensureVisible(
+                              context,
+                              duration: const Duration(milliseconds: 200),
+                              alignment: 0.5, // স্ক্রিনের মাঝ বরাবর স্ক্রোল করবে
+                            );
+                          }
+                        },
+                        child: TvFocusCard(
+                          focusNode: widget.chNodes[i],
+                          selected: playing,
+                          padding: EdgeInsets.zero,
+                          onTap: () {
+                            widget.appState.selectChannelByIndex(origIdx);
+                            Navigator.pushNamed(context, '/player');
+                          },
+                          child: ChannelCard(
+                            channel: ch,
+                            isPlaying: playing,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink();
                   },
                 ),
         ),
@@ -108,7 +135,6 @@ class ChannelGrid extends StatelessWidget {
 }
 
 // ─── Channel Card ─────────────────────────────────────────────────────────────
-
 class ChannelCard extends StatelessWidget {
   const ChannelCard({
     super.key,
@@ -125,13 +151,11 @@ class ChannelCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Logo — XY বরাবর ফিট ──────────────────────────────────────
           Container(
             color: AppTheme.card,
             child: channel.logoUrl.trim().isNotEmpty
                 ? Image.network(
                     channel.logoUrl.trim(),
-                    // fill করবে কিন্তু aspect ratio রাখবে
                     fit: BoxFit.contain,
                     width: double.infinity,
                     height: double.infinity,
@@ -141,21 +165,15 @@ class ChannelCard extends StatelessWidget {
                   )
                 : _logoPlaceholder(),
           ),
-
-          // ── Channel name bar ─────────────────────────────────────────
           Positioned(
             left: 0,
             right: 0,
             bottom: 0,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.85),
-                    Colors.transparent
-                  ],
+                  colors: [Colors.black.withOpacity(0.85), Colors.transparent],
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                 ),
@@ -172,17 +190,15 @@ class ChannelCard extends StatelessWidget {
               ),
             ),
           ),
-
-          // ── Badges top-left ──────────────────────────────────────────
           Positioned(
             top: 6,
             left: 6,
             child: Row(
               children: [
                 if (channel.isPremium == 1)
-                  _Badge(
+                  const _Badge(
                     label: 'PREMIUM',
-                    bg: const Color(0xFFEAB308),
+                    bg: Color(0xFFEAB308),
                     fg: Colors.black,
                   ),
                 const SizedBox(width: 3),
@@ -194,8 +210,6 @@ class ChannelCard extends StatelessWidget {
               ],
             ),
           ),
-
-          // ── Now playing overlay ──────────────────────────────────────
           if (isPlaying)
             Positioned.fill(
               child: Container(
@@ -232,11 +246,9 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
       child: Text(label,
-          style: TextStyle(
-              color: fg, fontSize: 8, fontWeight: FontWeight.w900)),
+          style: TextStyle(color: fg, fontSize: 8, fontWeight: FontWeight.w900)),
     );
   }
 }
