@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+// context.read ব্যবহার করার জন্য এই ইমপোর্টটি যুক্ত করা হয়েছে
+import 'package:provider/provider.dart'; 
 
 import '../../../core/theme/app_theme.dart';
 import '../../providers/app_state.dart';
@@ -59,7 +61,7 @@ class SettingsAccountSection extends StatelessWidget {
         const SizedBox(height: 12),
 
         // ── Right panel label — বর্তমান সেকশন ──────────────────────────
-        _SectionHint(
+        const _SectionHint(
           icon: Icons.info_outline_rounded,
           text: 'বর্তমানে: অ্যাকাউন্ট সেটিংস — লগইন ও সাবস্ক্রিপশন পরিচালনা করুন।',
         ),
@@ -104,7 +106,8 @@ class AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.read<AppState>();
+    // এখন 'read' মেথডটি সঠিকভাবে কাজ করবে
+    final appState = context.read<AppState>(); 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -160,15 +163,17 @@ class AccountCard extends StatelessWidget {
             ),
           ),
           TextButton.icon(
+            // অ্যান্ড্রয়েড টিভির জন্য লগআউট বাটনে ফোকাস স্টাইল যোগ করতে পারেন
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+            ),
             onPressed: () {
               appState.logout();
               Navigator.pop(context);
             },
-            icon: const Icon(Icons.logout_rounded,
-                color: Colors.redAccent, size: 16),
+            icon: const Icon(Icons.logout_rounded, size: 16),
             label: const Text('লগআউট',
-                style: TextStyle(
-                    color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
