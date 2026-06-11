@@ -18,7 +18,7 @@ class PlayerTopPanel extends StatefulWidget {
   final int currentIndex;
   final int totalChannels;
   final VoidCallback onSettings;
-  final bool isPlaying; 
+  final bool isPlaying;
   final String typedNumber;
 
   @override
@@ -27,9 +27,11 @@ class PlayerTopPanel extends StatefulWidget {
 
 class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProviderStateMixin {
   final FocusNode _settingsFocus = FocusNode(debugLabel: 'settings-btn');
-  bool _isSettingsFocused = false;
   
-  // লাইভ টেক্সট ব্লিংক করানোর জন্য অ্যানিমেশন কন্ট্রোলার
+  // শুরুতে false থাকবে, রিমোট দিয়ে সেটিংস বাটনে গেলে কেবল true হবে
+  bool _isSettingsFocused = false; 
+  
+  // LIVE লেখা ব্লিংক করানোর জন্য কন্ট্রোলার
   late AnimationController _blinkController;
 
   @override
@@ -38,7 +40,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
     _blinkController = AnimationController(
       duration: const Duration(milliseconds: 1000),
       vsync: this,
-    )..repeat(reverse: true); // অনবরত আসা-যাওয়া করবে (Blink Effect)
+    )..repeat(reverse: true);
   }
 
   @override
@@ -54,7 +56,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
 
     return Stack(
       children: [
-        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম + প্লে/পজ + লাইভ ব্লিংক) ==========
+        // ========== TOP-LEFT: একক চ্যানেল কার্ড (নম্বর + নাম / টাইপিং মোড + লাইভ) ==========
         Positioned(
           top: 20,
           left: 20,
@@ -66,8 +68,8 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isTyping 
-                    ? Colors.yellow.withOpacity(0.8)
-                    : AppTheme.primary.withOpacity(0.6),
+                    ? Colors.yellow.withOpacity(0.8) // টাইপ করার সময় বর্ডার হলুদ হবে
+                    : AppTheme.primary.withOpacity(0.4), // সাধারণ অবস্থায় নরমাল থিম বর্ডার
                 width: isTyping ? 2 : 1,
               ),
               boxShadow: [
@@ -81,13 +83,13 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ১. প্লে/পজ স্ট্যাটাস আইকন (ভিডিও কন্ট্রোলারের সাথে ম্যাচ করা)
+                // ১. প্লে/পজ স্ট্যাটাস আইকন (কন্ট্রোলারের সাথে ম্যাচিং)
                 Icon(
                   widget.isPlaying ? Icons.play_arrow_rounded : Icons.pause_rounded,
                   color: widget.isPlaying ? AppTheme.primary : Colors.redAccent,
                   size: 20,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
 
                 // ২. "CH " টেক্সট
                 Text(
@@ -111,7 +113,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
                   ),
                 ),
 
-                // ৪. চ্যানেল নাম এবং লাইভ ব্লিংকার (শুধুমাত্র টাইপ না করলে দেখাবে)
+                // ৪. চ্যানেল নাম এবং লাইভ ব্লিংকার (টাইপ না করলে কার্ডের ভেতরে ঢুকবে)
                 if (!isTyping) ...[
                   const SizedBox(width: 12),
                   Container(
@@ -141,7 +143,7 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
                   ),
                   const SizedBox(width: 12),
 
-                  // ৫. LIVE ব্লিংকিং ইন্ডিকেটর
+                  // ৫. LIVE ব্লিংকিং ইন্ডিকেটর (লাল ডট + LIVE টেক্সট)
                   FadeTransition(
                     opacity: _blinkController,
                     child: Row(
@@ -173,13 +175,14 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
           ),
         ),
 
-        // ========== TOP-RIGHT: সেটিংস আইকন (focusable) ==========
+        // ========== TOP-RIGHT: সেটিংস আইকন (রিমোট ফোকাস লজিকসহ) ==========
         Positioned(
           top: 20,
           right: 20,
           child: Focus(
             focusNode: _settingsFocus,
             onFocusChange: (hasFocus) {
+              // রিমোট দিয়ে সিলেক্ট করলেই কেবল ব্যাকগ্রাউন্ড এবং বর্ডার অন হবে
               setState(() {
                 _isSettingsFocused = hasFocus;
               });
@@ -200,19 +203,20 @@ class _PlayerTopPanelState extends State<PlayerTopPanel> with SingleTickerProvid
                 duration: const Duration(milliseconds: 150),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
+                  // ফোকাস হলে থিম কালার গ্লো পাবে, না হলে সম্পূর্ণ ট্রান্সপারেন্ট (নরমাল আইকন)
                   color: _isSettingsFocused
                       ? AppTheme.primary.withOpacity(0.25)
-                      : Colors.black.withOpacity(0.55),
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: _isSettingsFocused
-                        ? AppTheme.primary
-                        : Colors.white.withOpacity(0.15),
+                    // ফোকাস হলে বর্ডার দেখাবে, না হলে হাইড থাকবে
+                    color: _isSettingsFocused ? AppTheme.primary : Colors.transparent,
                     width: _isSettingsFocused ? 2 : 1,
                   ),
                 ),
                 child: Icon(
                   Icons.settings_rounded,
+                  // ফোকাসড অবস্থায় আইকনটি উজ্জ্বল সাদা হবে, সাধারণ অবস্থায় একটু হালকা (white70) থাকবে
                   color: _isSettingsFocused ? AppTheme.primary : Colors.white70,
                   size: 28,
                 ),
