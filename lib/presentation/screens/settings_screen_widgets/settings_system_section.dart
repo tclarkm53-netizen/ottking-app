@@ -41,7 +41,7 @@ class SettingsSystemSection extends StatelessWidget {
           // ── App Info ─────────────────────────────────────────────────
           SettingCard(
             icon: Icons.info_outline_rounded,
-            title: 'অ্যাপ তথ্য',
+            title: '앱 তথ্য',
             subtitle: 'ভার্সন, ডেভেলপার তথ্য',
             onTap: () => showDialog(
               context: context,
@@ -65,10 +65,10 @@ class SettingsSystemSection extends StatelessWidget {
               const Icon(Icons.settings_applications_rounded,
                   color: AppTheme.primary, size: 16),
               const SizedBox(width: 10),
-              Expanded(
+              const Expanded(
                 child: Text(
                   'বর্তমানে: সিস্টেম সেটিংস — ক্যাটালগ আপডেট ও অ্যাপ তথ্য।',
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ),
             ],
@@ -114,6 +114,7 @@ class _AppInfoDialog extends StatelessWidget {
               style: TextStyle(color: Colors.white70, fontSize: 14)),
           const SizedBox(height: 16),
           Container(
+            width: double.maxFinite, // উইডথ কনসিস্টেন্ট রাখার জন্য
             padding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
@@ -138,9 +139,26 @@ class _AppInfoDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
+          autofocus: true, // ডায়ালগ ওপেন হলে রিমোটের ফোকাস সরাসরি এই বাটনে যাবে
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.primary,
+            // রিমোট দিয়ে বাটন সিলেক্ট করলে ব্যাকগ্রাউন্ড কালার চেঞ্জ হবে
+            backgroundColor: Colors.transparent,
+          ).copyWith(
+            overlayColor: WidgetStateProperty.resolveWith<Color?>(
+              (Set<WidgetState> states) {
+                if (states.contains(WidgetState.focused)) {
+                  return AppTheme.primary.withOpacity(0.15); // ফোকাসড ব্যাকগ্রাউন্ড
+                }
+                return null;
+              },
+            ),
+          ),
           onPressed: () => Navigator.pop(context),
-          child:
-              Text('বন্ধ', style: TextStyle(color: AppTheme.primary)),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text('বন্ধ', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
         ),
       ],
     );
