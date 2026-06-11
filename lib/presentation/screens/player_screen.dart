@@ -11,7 +11,7 @@ import '../../core/theme/app_theme.dart';
 import '../providers/app_state.dart';
 import 'player_widgets/player_top_panel.dart';
 import 'player_widgets/player_bottom_bar.dart';
-import 'channel_list_panel.dart';
+import 'player_widgets/channel_list_panel.dart';
 import 'player_widgets/loading_overlay.dart';
 import 'player_widgets/app_info_dialog.dart';
 
