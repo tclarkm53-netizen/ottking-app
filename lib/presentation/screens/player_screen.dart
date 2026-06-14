@@ -1,4 +1,3 @@
-// lib/presentation/screens/player_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -49,6 +48,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   DateTime? _okDown;
   bool _longHandled = false;
 
+  // দ্রুত চ্যানেল সুইচের রেস কন্ডিশন ঠেকানোর ইউনিক টাইমস্ট্যাম্প টোকেন
+  int _currentInitTimestamp = 0; 
+
   // ========== Lifecycle ==========
 
   @override
@@ -77,6 +79,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _appState = Provider.of<AppState>(context, listen: false);
         _initController();
         _startControlsTimer();
+        _focus.requestFocus(); // স্ক্রিন খোলার সাথে সাথে রিমোট ফোকাস রিকোয়েস্ট
       }
     });
   }
@@ -111,29 +114,36 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _startControlsTimer() {
     _controlsTimer?.cancel();
     _controlsTimer = Timer(const Duration(seconds: 5), () {
-      if (mounted && _showControls && _typed.isEmpty) {
+      if (mounted && _showControls && _typed.isEmpty && !_showChannelList) {
         setState(() => _showControls = false);
       }
     });
   }
 
   void _toggleControls() {
+    if (_showChannelList) return; 
     setState(() => _showControls = !_showControls);
     if (_showControls) _startControlsTimer();
   }
 
-  // ========== Controller ==========
+  // ========== Controller Handle (রেস কন্ডিশন ও মেমোরি লিক ফিক্সড) ==========
 
-  void _disposeOld(VideoPlayerController old, VoidCallback? listener) {
-    Future(() async {
-      try {
-        if (listener != null) old.removeListener(listener);
-        await old.setVolume(0);
-        if (old.value.isPlaying) await old.pause();
-      } catch (_) {} finally {
-        old.dispose();
+  Future<void> _disposeController() async {
+    if (_ctrl != null) {
+      final oldCtrl = _ctrl!;
+      _ctrl = null;
+      if (_ctrlListener != null) {
+        oldCtrl.removeListener(_ctrlListener!);
+        _ctrlListener = null;
       }
-    });
+      try {
+        await oldCtrl.setVolume(0);
+        if (oldCtrl.value.isPlaying) {
+          await oldCtrl.pause();
+        }
+      } catch (_) {}
+      oldCtrl.dispose();
+    }
   }
 
   Future<void> _initController() async {
@@ -145,19 +155,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _ctrl!.value.isInitialized &&
         !_ctrl!.value.hasError) return;
 
+    // প্রতিবার কল হওয়ার সময় একটি ইউনিক টাইমস্ট্যাম্প লক তৈরি করা হচ্ছে
+    final int thisInitTimestamp = DateTime.now().millisecondsSinceEpoch;
+    _currentInitTimestamp = thisInitTimestamp;
+
     setState(() {
       _isLoading = true;
       _hasStreamError = false;
       _activeChannelId = channel.id;
     });
 
-    if (_ctrl != null) {
-      final old = _ctrl!;
-      final oldL = _ctrlListener;
-      _ctrl = null;
-      _ctrlListener = null;
-      _disposeOld(old, oldL);
-    }
+    await _disposeController(); 
 
     final newCtrl = VideoPlayerController.networkUrl(
       Uri.parse(channel.streamUrl),
@@ -179,9 +187,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             onTimeout: () => throw TimeoutException('timeout'),
           );
 
-      if (!mounted) {
+      // গুরুত্বপূর্ণ চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
+      if (_currentInitTimestamp != thisInitTimestamp || !mounted) {
         newCtrl.dispose();
-        return;
+        return; 
       }
 
       await newCtrl.play();
@@ -198,12 +207,17 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       });
     } catch (e) {
       debugPrint('Init error: $e');
-      newCtrl.dispose();
-      _handleLoadError();
+      
+      // শুধুমাত্র কারেন্ট চ্যানেলের জন্য এরর হ্যান্ডেল হবে, স্কিপ হওয়া চ্যানেলের জন্য নয়
+      if (_currentInitTimestamp == thisInitTimestamp && mounted) {
+        newCtrl.dispose();
+        _handleLoadError();
+      } else {
+        newCtrl.dispose();
+      }
     }
   }
 
-  // [UPDATED] বাফারিং শেষে অটো-প্লে করার লজিক যুক্ত করা হয়েছে
   void _onCtrlUpdate() {
     if (!mounted) return;
     
@@ -212,7 +226,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       return;
     }
 
-    // বাফার লোড শেষ হলে যদি প্লেয়ার আটকে থাকে তবে ফোর্স প্লে করবে
     if (_ctrl != null && _ctrl!.value.isInitialized) {
       if (!_ctrl!.value.isBuffering && 
           !_ctrl!.value.isPlaying && 
@@ -221,7 +234,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _ctrl!.play();
       }
     }
-    
     setState(() {});
   }
 
@@ -258,27 +270,24 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
-  // ========== Channel Switch ==========
+  // ========== Channel Switch (দ্রুত পরিবর্তন হ্যান্ডেল) ==========
 
-  void _switchChannel(int direction) {
+  void _switchChannel(int direction) async {
     if (_appState == null) return;
 
     _retryTimer?.cancel();
     _retryCount = 0;
+    
+    // বাটন চাপার সাথে সাথে আগের রানিং টাইমস্ট্যাম্প বাতিল করে দেওয়া হলো
+    _currentInitTimestamp = DateTime.now().millisecondsSinceEpoch;
 
-    if (_ctrl != null) {
-      final old = _ctrl!;
-      final oldL = _ctrlListener;
-      _ctrl = null;
-      _ctrlListener = null;
-      _disposeOld(old, oldL);
-    }
+    await _disposeController();
 
     setState(() {
       _showControls = true;
       _isLoading = true;
       _hasStreamError = false;
-      _activeChannelId = null;
+      _activeChannelId = null; 
     });
     _startControlsTimer();
 
@@ -289,7 +298,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     });
   }
 
-  void _switchToIndex(int index) {
+  void _switchToIndex(int index) async {
     if (_appState == null) return;
     final allCh = _appState!.channels;
     if (index < 0 || index >= allCh.length) {
@@ -299,14 +308,10 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     _retryTimer?.cancel();
     _retryCount = 0;
+    
+    _currentInitTimestamp = DateTime.now().millisecondsSinceEpoch;
 
-    if (_ctrl != null) {
-      final old = _ctrl!;
-      final oldL = _ctrlListener;
-      _ctrl = null;
-      _ctrlListener = null;
-      _disposeOld(old, oldL);
-    }
+    await _disposeController();
 
     setState(() {
       _showControls = true;
@@ -316,6 +321,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     });
 
     _appState!.selectChannelByIndex(index);
+    
     Future.microtask(() {
       if (mounted) _initController();
     });
@@ -347,7 +353,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         builder: (ctx, state, __) => _SettingsDialog(
           state: state,
           onAppInfo: () {
-            Navigator.pop(context); // settings বন্ধ করে
+            Navigator.pop(context); 
             _showAppInfo();
           },
           onNavigateSettings: () {
@@ -357,14 +363,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           onClose: () => Navigator.pop(context),
         ),
       ),
-    ).then((_) => _startControlsTimer());
+    ).then((_) {
+      _focus.requestFocus(); // ডায়ালগ বন্ধ হলে মেইন রিমোট ফোকাস রিস্টোর
+      _startControlsTimer();
+    });
   }
 
   void _showAppInfo() {
     showDialog(
       context: context,
       builder: (_) => const AppInfoDialog(),
-    ).then((_) => _startControlsTimer());
+    ).then((_) {
+      _focus.requestFocus(); // ইনফো বন্ধ হলে ফোকাস রিস্টোর
+      _startControlsTimer();
+    });
   }
 
   // ========== Exit Logic ==========
@@ -415,7 +427,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _retryTimer?.cancel();
     _blinkTimer?.cancel();
     try { await WakelockPlus.disable(); } catch (_) {}
-    try { await _ctrl?.pause(); } catch (_) {}
+    await _disposeController();
     if (!mounted) return;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     Navigator.pushReplacementNamed(context, '/home');
@@ -427,7 +439,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _retryTimer?.cancel();
     _blinkTimer?.cancel();
     try { await WakelockPlus.disable(); } catch (_) {}
-    try { await _ctrl?.pause(); } catch (_) {}
+    await _disposeController();
     if (!mounted) return;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -455,23 +467,27 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
           backgroundColor: AppTheme.card));
   }
 
-  // ========== Key Handler ==========
+  // ========== Proper Android TV Remote Key Handler ==========
 
   void _handleKey(KeyEvent event) {
     final label = event.logicalKey.keyLabel;
 
     if (event is KeyDownEvent) {
+      // ১. নম্বর বাটন হ্যান্ডলিং (0-9)
       if (RegExp(r'^[0-9]$').hasMatch(label)) {
         _handleNumberInput(label);
         return;
       }
 
+      // ২. চ্যানেল আপ / রিমোটের আপ বাটন (চ্যানেল পরিবর্তন -১)
       if (event.logicalKey == LogicalKeyboardKey.channelUp ||
           event.logicalKey == LogicalKeyboardKey.pageUp ||
           event.logicalKey == LogicalKeyboardKey.arrowUp) {
         _switchChannel(-1);
         return;
       }
+      
+      // ৩. চ্যানেল ডাউন / রিমোটের ডাউন বাটন (চ্যানেল পরিবর্তন +১)
       if (event.logicalKey == LogicalKeyboardKey.channelDown ||
           event.logicalKey == LogicalKeyboardKey.pageDown ||
           event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -479,6 +495,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
 
+      // ৪. ওকে (OK) / এন্টার বাটন চেপে ধরা ট্র্যাকিং
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -486,6 +503,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _longHandled = false;
       }
 
+      // ৫. কন্ট্রোল প্যানেল হাইড থাকলে যেকোনো বাটনে আগে প্যানেল শো করবে
       if (!_showControls) {
         setState(() => _showControls = true);
         _startControlsTimer();
@@ -493,23 +511,29 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
       _startControlsTimer();
 
+      // ৬. ব্যাক বাটন প্রেস (Exit Logic)
       if (event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.goBack) {
         _handleExit();
       }
     }
 
-    if (event is KeyUpEvent) {
+    if (event is UpEvent || event is KeyUpEvent) {
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
         final held = _okDown != null ? DateTime.now().difference(_okDown!) : Duration.zero;
         _okDown = null;
 
+        // ৮০০ মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট ওপেন)
         if (!_longHandled && held.inMilliseconds >= 800) {
           _longHandled = true;
-          setState(() => _showChannelList = !_showChannelList);
+          setState(() {
+            _showChannelList = !_showChannelList;
+            if (_showChannelList) _showControls = true;
+          });
         } else if (!_longHandled) {
+          // নরমাল সিঙ্গেল ক্লিকে প্লে/পজ
           _togglePlayPause();
         }
         _longHandled = false;
@@ -525,10 +549,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _retryTimer?.cancel();
     _blinkTimer?.cancel();
     try { WakelockPlus.disable(); } catch (_) {}
-    if (_ctrl != null && _ctrlListener != null) {
-      _ctrl!.removeListener(_ctrlListener!);
-    }
-    _ctrl?.dispose();
+    _disposeController();
     _focus.dispose();
     super.dispose();
   }
@@ -562,8 +583,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               if (initialized)
                 SizedBox.expand(
                   child: FittedBox(
-                    // [UPDATED] BoxFit.contain থেকে BoxFit.fill এ পরিবর্তন করা হয়েছে (fitXY stretch)
-                    fit: BoxFit.fill,
+                    fit: BoxFit.fill, // Full screen stretch (fitXY)
                     child: SizedBox(
                       width: _ctrl!.value.size.width,
                       height: _ctrl!.value.size.height,
@@ -626,7 +646,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 }
 
-// ========== Settings Dialog Widget ==========
+// ========== Settings Dialog (ডায়ালগ ক্র্যাশ ও নেভিগেশন ফিক্সড) ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -647,21 +667,19 @@ class _SettingsDialog extends StatefulWidget {
 
 class _SettingsDialogState extends State<_SettingsDialog> {
   final List<FocusNode> _focusNodes = [];
-  final List<int> _itemIndices = [];
   int _focusedIndex = 0;
+  int _totalItems = 0;
 
   @override
   void initState() {
     super.initState();
     
-    int totalItems = 3; 
-    if (widget.state.isAuthenticated) {
-      totalItems = 4; 
-    }
+    // টোটাল ফোকাসেবল আইটেম ডাইনামিকালি নির্ধারণ (actions বাটন সহ)
+    _totalItems = widget.state.isAuthenticated ? 4 : 3; 
+    _totalItems += 1; // নিচের সেটিংস বাটনের ফোকাসের জন্য
 
-    for (int i = 0; i < totalItems; i++) {
-      _focusNodes.add(FocusNode());
-      _itemIndices.add(i);
+    for (int i = 0; i < _totalItems; i++) {
+      _focusNodes.add(FocusNode(debugLabel: 'settings-item-$i'));
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -743,7 +761,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
-    int currentVisualIndex = 0;
+    int currentVisualIndex = 0; 
 
     return AlertDialog(
       backgroundColor: Colors.black.withOpacity(0.95),
@@ -767,7 +785,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             child: SwitchListTile(
               title: const Text('Boot Player (অটো প্লেয়ার)', style: TextStyle(color: Colors.white)),
               subtitle: Text(
-                'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
+                '앱 চালু হলে সরাসরি লাইভ টিভি খুলবে',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
               ),
               activeColor: AppTheme.primary,
@@ -803,7 +821,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             onActivate: widget.onAppInfo,
             child: ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
+              title: const Text('앱 তথ্য (App Info)', style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
@@ -815,9 +833,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         _focusableItem(
           listIndex: currentVisualIndex++,
           onActivate: widget.onNavigateSettings,
-          child: TextButton(
-            onPressed: widget.onNavigateSettings,
-            child: const Text('সেটিংস', style: TextStyle(color: Colors.white54)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Text(
+              'সেটিংস', 
+              style: TextStyle(color: _focusedIndex == (currentVisualIndex - 1) ? Colors.white : Colors.white54),
+            ),
           ),
         ),
         TextButton(
