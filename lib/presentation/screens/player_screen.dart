@@ -88,23 +88,18 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void didChangeDependencies() {
     super.didChangeDependencies();
     
-    // প্লেয়ার রানিং অবস্থায় ব্যাকগ্রাউন্ড ডেটা আপডেটের কারণে যেন হুট করে প্লেয়ার রিলোড না হয়,
-    // সেজন্য watch করার সময় আমরা চেক করব কারেন্ট চ্যানেলের ID পরিবর্তন হয়েছে কিনা।
-    // চ্যানেল চেঞ্জ না হওয়া পর্যন্ত প্লেয়ার তার নিজের মতো চলতে থাকবে।
+    // ব্যাকগ্রাউন্ড লিস্ট আপডেটের কারণে রানিং প্লেয়ার যেন রিলোড না হয় তার ব্লকার লজিক
     final nextState = context.watch<AppState>();
     if (_appState != null && _activeChannelId != null) {
       final nextChannelId = nextState.channels.isNotEmpty 
           ? nextState.channels[nextState.currentChannelIndex].id 
           : null;
           
-      // যদি আইডি একই থাকে (তার মানে ব্যাকগ্রাউন্ডে শুধু ডেটা আপডেট হয়েছে, ইউজার চ্যানেল চেঞ্জ করেননি)
-      // তবে প্লেয়ার রি-ইনিশিয়ালাইজেশন স্কিপ করা হবে।
       if (nextChannelId == _activeChannelId) {
         _appState = nextState;
         return; 
       }
     }
-    
     _appState = nextState;
   }
 
@@ -173,7 +168,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _ctrl!.value.isInitialized &&
         !_ctrl!.value.hasError) return;
 
-    // প্রতিবার কল হওয়ার সময় একটি ইউনিক টাইমস্ট্যাম্প লক তৈরি করা হচ্ছে
     final int thisInitTimestamp = DateTime.now().millisecondsSinceEpoch;
     _currentInitTimestamp = thisInitTimestamp;
 
@@ -185,13 +179,19 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     await _disposeController(); 
 
-    // সিকিউরিটি লেয়ার: কাস্টম হেডার ও এজেন্ট পাসিং (লিঙ্ক ট্র্যাকিং ও থার্ড পার্টি প্লেয়ার ব্লকার)
+    // ১. ট্রাফিক মনিটর ও প্রক্সি ব্লকার মেকানিজম (Charles/Canary/Fiddler ইন্টারসেপ্ট ব্লকার)
+    final HttpClient secureHttpClient = HttpClient()
+      ..findProxy = (uri) => "DIRECT" // কোনো প্রক্সি সার্ভার ব্যবহার করবে না, ডিরেক্ট কানেক্ট হবে
+      ..badCertificateCallback = (cert, host, port) => false; // ফেক প্রক্সি সার্টিফিকেট ব্লক করবে
+
+    // ২. সিকিউরিটি লেয়ারসহ প্লেয়ার ইনিশিয়ালাইজেশন
     final newCtrl = VideoPlayerController.networkUrl(
       Uri.parse(channel.streamUrl),
       videoPlayerOptions: VideoPlayerOptions(
         allowBackgroundPlayback: false,
         mixWithOthers: false,
       ),
+      httpClientProvider: () => secureHttpClient, // ট্রাফিক ব্লকার ক্লায়েন্ট অ্যাসাইন
       httpHeaders: {
         'User-Agent': 'oTtking-AndroidTV-Secure-Agent',
         'X-App-Token': 'backend_generated_secret_handshake_token',
@@ -207,7 +207,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             onTimeout: () => throw TimeoutException('timeout'),
           );
 
-      // রেস কন্ডিশন চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
       if (_currentInitTimestamp != thisInitTimestamp || !mounted) {
         newCtrl.dispose();
         return; 
@@ -227,8 +226,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       });
     } catch (e) {
       debugPrint('Init error: $e');
-      
-      // শুধুমাত্র কারেন্ট চ্যানেলের জন্য এরর হ্যান্ডেল হবে, স্কিপ হওয়া চ্যানেলের জন্য নয়
       if (_currentInitTimestamp == thisInitTimestamp && mounted) {
         newCtrl.dispose();
         _handleLoadError();
@@ -297,8 +294,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     _retryTimer?.cancel();
     _retryCount = 0;
-    
-    // বাটন চাপার সাথে সাথে আগের রানিং টাইমস্ট্যাম্প বাতিল করে দেওয়া হলো
     _currentInitTimestamp = DateTime.now().millisecondsSinceEpoch;
 
     await _disposeController();
@@ -328,7 +323,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     _retryTimer?.cancel();
     _retryCount = 0;
-    
     _currentInitTimestamp = DateTime.now().millisecondsSinceEpoch;
 
     await _disposeController();
@@ -384,7 +378,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         ),
       ),
     ).then((_) {
-      _focus.requestFocus(); // ডায়ালগ বন্ধ হলে মেইন রিমোট ফোকাস রিস্টোর
+      _focus.requestFocus(); 
       _startControlsTimer();
     });
   }
@@ -480,7 +474,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-      ..clearSnackBars
+      ..clearSnackBars()
       ..showSnackBar(SnackBar(
           content: Text(msg),
           duration: const Duration(seconds: 2),
@@ -493,13 +487,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final label = event.logicalKey.keyLabel;
 
     if (event is KeyDownEvent) {
-      // ১. নম্বর বাটন হ্যান্ডলিং (0-9)
       if (RegExp(r'^[0-9]$').hasMatch(label)) {
         _handleNumberInput(label);
         return;
       }
 
-      // ২. চ্যানেল আপ / রিমোটের আপ বাটন (চ্যানেল পরিবর্তন -১)
       if (event.logicalKey == LogicalKeyboardKey.channelUp ||
           event.logicalKey == LogicalKeyboardKey.pageUp ||
           event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -507,7 +499,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
       
-      // ৩. চ্যানেল ডাউন / রিমোটের ডাউন বাটন (চ্যানেল পরিবর্তন +১)
       if (event.logicalKey == LogicalKeyboardKey.channelDown ||
           event.logicalKey == LogicalKeyboardKey.pageDown ||
           event.logicalKey == LogicalKeyboardKey.arrowDown) {
@@ -515,7 +506,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         return;
       }
 
-      // ৪. ওকে (OK) / এন্টার বাটন চেপে ধরা ট্র্যাকিং
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
@@ -523,7 +513,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _longHandled = false;
       }
 
-      // ৫. কন্ট্রোল প্যানেল হাইড থাকলে যেকোনো বাটন প্রেস করলে আগে প্যানেল শো করবে
       if (!_showControls) {
         setState(() => _showControls = true);
         _startControlsTimer();
@@ -531,14 +520,12 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
       _startControlsTimer();
 
-      // ৬. ব্যাক বাটন প্রেস (Exit Logic)
       if (event.logicalKey == LogicalKeyboardKey.escape ||
           event.logicalKey == LogicalKeyboardKey.goBack) {
         _handleExit();
       }
     }
 
-    // ফিক্সড: KeyUpEvent স্ট্যান্ডার্ড রিমোট হ্যান্ডলার
     if (event is KeyUpEvent) {
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
@@ -546,7 +533,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         final held = _okDown != null ? DateTime.now().difference(_okDown!) : Duration.zero;
         _okDown = null;
 
-        // ৮মশো মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট প্যানেল ওপেন)
         if (!_longHandled && held.inMilliseconds >= 800) {
           _longHandled = true;
           setState(() {
@@ -554,7 +540,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             if (_showChannelList) _showControls = true;
           });
         } else if (!_longHandled) {
-          // নরমাল সিঙ্গেল ক্লিকে প্লে/পজ
           _togglePlayPause();
         }
         _longHandled = false;
@@ -585,81 +570,89 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final initialized = _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
     final isLive = _ctrl?.value.duration == Duration.zero || _ctrl?.value.duration == null;
 
-    return KeyboardListener(
-      focusNode: _focus,
-      autofocus: true,
-      onKeyEvent: _handleKey,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: _toggleControls,
-          onHorizontalDragEnd: (d) {
-            if (d.primaryVelocity == null) return;
-            if (d.primaryVelocity! < -300) _switchChannel(1);
-            if (d.primaryVelocity! > 300) _switchChannel(-1);
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (initialized)
-                SizedBox.expand(
-                  child: FittedBox(
-                    fit: BoxFit.fill, // TV Aspect ratio স্ট্রেচ (fitXY)
-                    child: SizedBox(
-                      width: _ctrl!.value.size.width,
-                      height: _ctrl!.value.size.height,
-                      child: VideoPlayer(_ctrl!),
+    // মোবাইলের ফিজিক্যাল বা জেসচার ব্যাক বাটন ইন্টারসেপ্ট করার জন্য PopScope গার্ড যুক্ত করা হলো
+    return PopScope(
+      canPop: false, // ডিফল্ট ব্যাক অ্যাকশন অফ থাকবে
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleExit(); // ব্যাক প্রেস করলেই কাস্টম পপ-আপ ডায়ালগ রিকোয়েস্ট হবে
+      },
+      child: KeyboardListener(
+        focusNode: _focus,
+        autofocus: true,
+        onKeyEvent: _handleKey,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          body: GestureDetector(
+            onTap: _toggleControls,
+            onHorizontalDragEnd: (d) {
+              if (d.primaryVelocity == null) return;
+              if (d.primaryVelocity! < -300) _switchChannel(1);
+              if (d.primaryVelocity! > 300) _switchChannel(-1);
+            },
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (initialized)
+                  SizedBox.expand(
+                    child: FittedBox(
+                      fit: BoxFit.fill, 
+                      child: SizedBox(
+                        width: _ctrl!.value.size.width,
+                        height: _ctrl!.value.size.height,
+                        child: VideoPlayer(_ctrl!),
+                      ),
                     ),
+                  )
+                else
+                  LoadingOverlay(
+                    hasError: _hasStreamError,
+                    retryCount: _retryCount,
+                    maxRetry: _maxRetry,
+                    channelName: ch.name,
+                    onRetry: () {
+                      _retryCount = 0;
+                      setState(() {
+                        _hasStreamError = false;
+                        _activeChannelId = null;
+                      });
+                      _initController();
+                    },
+                    onNext: () => _switchChannel(1),
                   ),
-                )
-              else
-                LoadingOverlay(
-                  hasError: _hasStreamError,
-                  retryCount: _retryCount,
-                  maxRetry: _maxRetry,
-                  channelName: ch.name,
-                  onRetry: () {
-                    _retryCount = 0;
-                    setState(() {
-                      _hasStreamError = false;
-                      _activeChannelId = null;
-                    });
-                    _initController();
-                  },
-                  onNext: () => _switchChannel(1),
-                ),
 
-              if (_showControls)
-                PlayerTopPanel(
-                  channel: ch,
-                  currentIndex: _appState!.currentChannelIndex,
-                  totalChannels: _appState!.channels.length,
-                  onSettings: _openSettings,
-                  typedNumber: _typed,
-                ),
+                if (_showControls)
+                  PlayerTopPanel(
+                    channel: ch,
+                    currentIndex: _appState!.currentChannelIndex,
+                    totalChannels: _appState!.channels.length,
+                    onSettings: _openSettings,
+                    typedNumber: _typed,
+                  ),
 
-              if (_showControls && initialized)
-                PlayerBottomBar(
-                  ctrl: _ctrl!,
-                  isLive: isLive,
-                  liveBlink: _liveBlink,
-                  onPlayPause: _togglePlayPause,
-                  onExit: _handleExit,
-                  onChannelUp: () => _switchChannel(-1),
-                  onChannelDown: () => _switchChannel(1),
-                ),
+                if (_showControls && initialized)
+                  PlayerBottomBar(
+                    ctrl: _ctrl!,
+                    isLive: isLive,
+                    liveBlink: _liveBlink,
+                    onPlayPause: _togglePlayPause,
+                    onExit: _handleExit,
+                    onChannelUp: () => _switchChannel(-1),
+                    onChannelDown: () => _switchChannel(1),
+                  ),
 
-              if (_showChannelList)
-                ChannelListPanel(
-                  channels: _appState!.channels,
-                  currentIndex: _appState!.currentChannelIndex,
-                  onSelect: (i) {
-                    setState(() => _showChannelList = false);
-                    _switchToIndex(i);
-                  },
-                  onClose: () => setState(() => _showChannelList = false),
-                ),
-            ],
+                if (_showChannelList)
+                  ChannelListPanel(
+                    channels: _appState!.channels,
+                    currentIndex: _appState!.currentChannelIndex,
+                    onSelect: (i) {
+                      setState(() => _showChannelList = false);
+                      _switchToIndex(i);
+                    },
+                    onClose: () => setState(() => _showChannelList = false),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -696,7 +689,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     super.initState();
     
     _totalItems = widget.state.isAuthenticated ? 4 : 3; 
-    _totalItems += 1; // নিচের এক্সট্রা সেটিংস বাটনের জন্য (+১)
+    _totalItems += 1; 
 
     for (int i = 0; i < _totalItems; i++) {
       _focusNodes.add(FocusNode(debugLabel: 'settings-item-$i'));
