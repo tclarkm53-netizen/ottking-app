@@ -87,7 +87,25 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _appState = context.watch<AppState>();
+    
+    // প্লেয়ার রানিং অবস্থায় ব্যাকগ্রাউন্ড ডেটা আপডেটের কারণে যেন হুট করে প্লেয়ার রিলোড না হয়,
+    // সেজন্য watch করার সময় আমরা চেক করব কারেন্ট চ্যানেলের ID পরিবর্তন হয়েছে কিনা।
+    // চ্যানেল চেঞ্জ না হওয়া পর্যন্ত প্লেয়ার তার নিজের মতো চলতে থাকবে।
+    final nextState = context.watch<AppState>();
+    if (_appState != null && _activeChannelId != null) {
+      final nextChannelId = nextState.channels.isNotEmpty 
+          ? nextState.channels[nextState.currentChannelIndex].id 
+          : null;
+          
+      // যদি আইডি একই থাকে (তার মানে ব্যাকগ্রাউন্ডে শুধু ডেটা আপডেট হয়েছে, ইউজার চ্যানেল চেঞ্জ করেননি)
+      // তবে প্লেয়ার রি-ইনিশিয়ালাইজেশন স্কিপ করা হবে।
+      if (nextChannelId == _activeChannelId) {
+        _appState = nextState;
+        return; 
+      }
+    }
+    
+    _appState = nextState;
   }
 
   void _forceFullLandscape() {
@@ -155,7 +173,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _ctrl!.value.isInitialized &&
         !_ctrl!.value.hasError) return;
 
-    // প্রতিবার কল হওয়ার সময় একটি ইউনিক টাইমস্ট্যাম্প লক তৈরি করা হচ্ছে
+    // প্রতিবার কল হওয়ার সময় একটি ইউনিক টাইমস্ট্যাম্প লক তৈরি করা হচ্ছে
     final int thisInitTimestamp = DateTime.now().millisecondsSinceEpoch;
     _currentInitTimestamp = thisInitTimestamp;
 
@@ -189,7 +207,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             onTimeout: () => throw TimeoutException('timeout'),
           );
 
-      // রেস কন্ডিশন চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
+      // রেস কন্ডিশন চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
       if (_currentInitTimestamp != thisInitTimestamp || !mounted) {
         newCtrl.dispose();
         return; 
@@ -210,7 +228,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     } catch (e) {
       debugPrint('Init error: $e');
       
-      // শুধুমাত্র কারেন্ট চ্যানেলের জন্য এরর হ্যান্ডেল হবে, স্কিপ হওয়া চ্যানেলের জন্য নয়
+      // শুধুমাত্র কারেন্ট চ্যানেলের জন্য এরর হ্যান্ডেল হবে, স্কিপ হওয়া চ্যানেলের জন্য নয়
       if (_currentInitTimestamp == thisInitTimestamp && mounted) {
         newCtrl.dispose();
         _handleLoadError();
@@ -280,7 +298,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _retryTimer?.cancel();
     _retryCount = 0;
     
-    // বাটন চাপার সাথে সাথে আগের রানিং টাইমস্ট্যাম্প বাতিল করে দেওয়া হলো
+    // বাটন চাপার সাথে সাথে আগের রানিং টাইমস্ট্যাম্প বাতিল করে দেওয়া হলো
     _currentInitTimestamp = DateTime.now().millisecondsSinceEpoch;
 
     await _disposeController();
@@ -366,7 +384,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         ),
       ),
     ).then((_) {
-      _focus.requestFocus(); // ডায়ালগ বন্ধ হলে মেইন রিমোট ফোকাস রিস্টোর
+      _focus.requestFocus(); // ডায়ালগ বন্ধ হলে মেইন রিমোট ফোকাস রিস্টোর
       _startControlsTimer();
     });
   }
@@ -462,7 +480,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void _showSnack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-      ..clearSnackBars()
+      ..clearSnackBars
       ..showSnackBar(SnackBar(
           content: Text(msg),
           duration: const Duration(seconds: 2),
@@ -528,7 +546,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         final held = _okDown != null ? DateTime.now().difference(_okDown!) : Duration.zero;
         _okDown = null;
 
-        // ৮০০ মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট প্যানেল ওপেন)
+        // ৮মশো মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট প্যানেল ওপেন)
         if (!_longHandled && held.inMilliseconds >= 800) {
           _longHandled = true;
           setState(() {
@@ -774,8 +792,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
       title: const Row(
         children: [
           Icon(Icons.settings, color: Colors.white),
-          SizedBox(width: 10),
-          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
+          Spacer(),
+          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
