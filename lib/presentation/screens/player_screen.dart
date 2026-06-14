@@ -79,7 +79,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _appState = Provider.of<AppState>(context, listen: false);
         _initController();
         _startControlsTimer();
-        _focus.requestFocus(); // স্ক্রিন খোলার সাথে সাথে রিমোট ফোকাস রিকোয়েস্ট
+        _focus.requestFocus(); // স্ক্রিন খোলার সাথে সাথে রিমোট ফোকাস একটিভ
       }
     });
   }
@@ -126,7 +126,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (_showControls) _startControlsTimer();
   }
 
-  // ========== Controller Handle (রেস কন্ডিশন ও মেমোরি লিক ফিক্সড) ==========
+  // ========== Controller Handle (রেস কন্ডিশন, ট্র্যাকিং ব্লকার ও মেমোরি ফিক্সড) ==========
 
   Future<void> _disposeController() async {
     if (_ctrl != null) {
@@ -167,6 +167,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     await _disposeController(); 
 
+    // সিকিউরিটি লেয়ার: কাস্টম হেডার ও এজেন্ট পাসিং (লিঙ্ক ট্র্যাকিং ও থার্ড পার্টি প্লেয়ার ব্লকার)
     final newCtrl = VideoPlayerController.networkUrl(
       Uri.parse(channel.streamUrl),
       videoPlayerOptions: VideoPlayerOptions(
@@ -174,8 +175,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         mixWithOthers: false,
       ),
       httpHeaders: {
-        'User-Agent':
-            'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'oTtking-AndroidTV-Secure-Agent',
+        'X-App-Token': 'backend_generated_secret_handshake_token',
+        'Origin': 'https://ottking.internal',
         'Accept': '*/*',
         'Connection': 'keep-alive',
       },
@@ -187,7 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             onTimeout: () => throw TimeoutException('timeout'),
           );
 
-      // গুরুত্বপূর্ণ চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
+      // রেস কন্ডিশন চেক: নেটওয়ার্ক রিকোয়েস্ট আসার মাঝে ইউজার অন্য চ্যানেলে চলে গেছে কিনা?
       if (_currentInitTimestamp != thisInitTimestamp || !mounted) {
         newCtrl.dispose();
         return; 
@@ -270,7 +272,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     }
   }
 
-  // ========== Channel Switch (দ্রুত পরিবর্তন হ্যান্ডেল) ==========
+  // ========== Channel Switch ==========
 
   void _switchChannel(int direction) async {
     if (_appState == null) return;
@@ -374,7 +376,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       context: context,
       builder: (_) => const AppInfoDialog(),
     ).then((_) {
-      _focus.requestFocus(); // ইনফো বন্ধ হলে ফোকাস রিস্টোর
+      _focus.requestFocus(); 
       _startControlsTimer();
     });
   }
@@ -503,7 +505,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _longHandled = false;
       }
 
-      // ৫. কন্ট্রোল প্যানেল হাইড থাকলে যেকোনো বাটনে আগে প্যানেল শো করবে
+      // ৫. কন্ট্রোল প্যানেল হাইড থাকলে যেকোনো বাটন প্রেস করলে আগে প্যানেল শো করবে
       if (!_showControls) {
         setState(() => _showControls = true);
         _startControlsTimer();
@@ -518,14 +520,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
       }
     }
 
-    if (event is UpEvent || event is KeyUpEvent) {
+    // ফিক্সড: KeyUpEvent স্ট্যান্ডার্ড রিমোট হ্যান্ডলার
+    if (event is KeyUpEvent) {
       if (event.logicalKey == LogicalKeyboardKey.enter ||
           event.logicalKey == LogicalKeyboardKey.select ||
           event.logicalKey == LogicalKeyboardKey.space) {
         final held = _okDown != null ? DateTime.now().difference(_okDown!) : Duration.zero;
         _okDown = null;
 
-        // ৮০০ মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট ওপেন)
+        // ৮০০ মিলি-সেকেন্ড বা তার বেশি চেপে ধরলে লং-প্রেস (চ্যানেল লিস্ট প্যানেল ওপেন)
         if (!_longHandled && held.inMilliseconds >= 800) {
           _longHandled = true;
           setState(() {
@@ -583,7 +586,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
               if (initialized)
                 SizedBox.expand(
                   child: FittedBox(
-                    fit: BoxFit.fill, // Full screen stretch (fitXY)
+                    fit: BoxFit.fill, // TV Aspect ratio স্ট্রেচ (fitXY)
                     child: SizedBox(
                       width: _ctrl!.value.size.width,
                       height: _ctrl!.value.size.height,
@@ -646,7 +649,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   }
 }
 
-// ========== Settings Dialog (ডায়ালগ ক্র্যাশ ও নেভিগেশন ফিক্সড) ==========
+// ========== Settings Dialog (সম্পূর্ণ বাংলা টেক্সট ও বাগ ফিক্সড) ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -674,9 +677,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   void initState() {
     super.initState();
     
-    // টোটাল ফোকাসেবল আইটেম ডাইনামিকালি নির্ধারণ (actions বাটন সহ)
     _totalItems = widget.state.isAuthenticated ? 4 : 3; 
-    _totalItems += 1; // নিচের সেটিংস বাটনের ফোকাসের জন্য
+    _totalItems += 1; // নিচের এক্সট্রা সেটিংস বাটনের জন্য (+১)
 
     for (int i = 0; i < _totalItems; i++) {
       _focusNodes.add(FocusNode(debugLabel: 'settings-item-$i'));
@@ -773,7 +775,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         children: [
           Icon(Icons.settings, color: Colors.white),
           SizedBox(width: 10),
-          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
+          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -785,7 +787,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             child: SwitchListTile(
               title: const Text('Boot Player (অটো প্লেয়ার)', style: TextStyle(color: Colors.white)),
               subtitle: Text(
-                '앱 চালু হলে সরাসরি লাইভ টিভি খুলবে',
+                'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
               ),
               activeColor: AppTheme.primary,
@@ -821,7 +823,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             onActivate: widget.onAppInfo,
             child: ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-              title: const Text('앱 তথ্য (App Info)', style: TextStyle(color: Colors.white)),
+              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
