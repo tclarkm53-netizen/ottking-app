@@ -1,5 +1,3 @@
-// lib/presentation/screens/home_screen_widgets/channel_grid.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -26,7 +24,6 @@ class ChannelGrid extends StatefulWidget {
 }
 
 class _ChannelGridState extends State<ChannelGrid> {
-  // টিভি নেভিগেশনে অটো-স্ক্রোল ঠিক রাখার জন্য স্ক্রোল কন্ট্রোলার
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -84,7 +81,7 @@ class _ChannelGridState extends State<ChannelGrid> {
                   ),
                 )
               : GridView.builder(
-                  controller: _scrollController, // স্ক্রোল কন্ট্রোলার অ্যাসাইন করা হলো
+                  controller: _scrollController,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 5,
                     mainAxisSpacing: 12,
@@ -98,34 +95,34 @@ class _ChannelGridState extends State<ChannelGrid> {
                     final origIdx = widget.appState.channels.indexOf(ch);
                     final playing = widget.appState.currentChannelIndex == origIdx;
 
-                    // রিমোট দিয়ে নিচে নামার সময় যেন স্ক্রিন স্বয়ংক্রিয়ভাবে স্ক্রোল হয়
-                    return widget.chNodes.length > i 
-                    ? Focus(
-                        onFocusChange: (hasFocus) {
-                          if (hasFocus) {
-                            // ফোকাসড আইটেমটি স্ক্রিনের বাইরে থাকলে তাকে স্ক্রিনে টেনে নিয়ে আসবে
-                            Scrollable.ensureVisible(
-                              context,
-                              duration: const Duration(milliseconds: 200),
-                              alignment: 0.5, // স্ক্রিনের মাঝ বরাবর স্ক্রোল করবে
-                            );
-                          }
-                        },
-                        child: TvFocusCard(
-                          focusNode: widget.chNodes[i],
-                          selected: playing,
-                          padding: EdgeInsets.zero,
-                          onTap: () {
-                            widget.appState.selectChannelByIndex(origIdx);
-                            Navigator.pushNamed(context, '/player');
-                          },
-                          child: ChannelCard(
-                            channel: ch,
-                            isPlaying: playing,
-                          ),
-                        ),
-                      )
-                    : const SizedBox.shrink();
+                    if (widget.chNodes.length <= i) return const SizedBox.shrink();
+
+                    // এখানে বাড়তি Focus উইজেটটি রিমুভ করে সরাসরি TvFocusCard ব্যবহার করা হয়েছে
+                    return TvFocusCard(
+                      focusNode: widget.chNodes[i],
+                      selected: playing,
+                      padding: EdgeInsets.zero,
+                      // রিমোটের ফোকাস চেঞ্জের সাথে অটো-স্ক্রোল লজিক এখানে যুক্ত করা হলো
+                      onFocusChange: (hasFocus) {
+                        if (hasFocus) {
+                          // কারেন্ট কনটেক্সট ব্যবহার করে স্ক্রোল নিশ্চিত করা
+                          Scrollable.ensureVisible(
+                            context,
+                            duration: const Duration(milliseconds: 250),
+                            alignment: 0.5, // স্ক্রিনের একদম মাঝখানে নিয়ে আসবে
+                          );
+                        }
+                      },
+                      onTap: () {
+                        // রিমোটের 'OK' বাটন প্রেস করলে এই ব্লকটি প্রোপারলি এক্সিকিউট হবে
+                        widget.appState.selectChannelByIndex(origIdx);
+                        Navigator.pushNamed(context, '/player');
+                      },
+                      child: ChannelCard(
+                        channel: ch,
+                        isPlaying: playing,
+                      ),
+                    );
                   },
                 ),
         ),
