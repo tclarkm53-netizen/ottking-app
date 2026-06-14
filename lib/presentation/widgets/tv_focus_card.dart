@@ -2,7 +2,6 @@
 // Reusable TV remote–focusable card with glow effect
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // LogicalKeyboardKey ব্যবহারের জন্য এটি প্রয়োজন
 import '../../core/theme/app_theme.dart';
 
 class TvFocusCard extends StatefulWidget {
@@ -11,6 +10,7 @@ class TvFocusCard extends StatefulWidget {
     required this.onTap,
     required this.child,
     this.focusNode,
+    this.onFocusChange, // ChannelGrid থেকে পাঠানো স্ক্রোল লজিক রিসিভ করার জন্য
     this.selected = false,
     this.padding = const EdgeInsets.all(12),
     this.borderRadius = 14.0,
@@ -19,6 +19,7 @@ class TvFocusCard extends StatefulWidget {
   final VoidCallback onTap;
   final Widget child;
   final FocusNode? focusNode;
+  final ValueChanged<bool>? onFocusChange; // যুক্ত করা হলো
   final bool selected;
   final EdgeInsetsGeometry padding;
   final double borderRadius;
@@ -34,27 +35,28 @@ class _TvFocusCardState extends State<TvFocusCard> {
   Widget build(BuildContext context) {
     final active = _focused || widget.selected;
     
-    return Focus(
-      focusNode: widget.focusNode,
-      onFocusChange: (v) => setState(() => _focused = v),
-      // ── টিভি রিমোটের OK / Center বাটন হ্যান্ডেল করার লজিক ──
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent) {
-          final key = event.logicalKey;
-          // বিভিন্ন অ্যান্ড্রয়েড টিভি রিমোটের OK বাটন ডিটেকশন
-          if (key == LogicalKeyboardKey.select ||
-              key == LogicalKeyboardKey.enter ||
-              key == LogicalKeyboardKey.dpadCenter) {
-            widget.onTap(); // চ্যানেল প্লে করার মেথড ট্রিগার করবে
-            return KeyEventResult.handled;
+    // প্রিমিয়াম অ্যানিমেশন ইফেক্টের জন্য পুরো উইজেটকে স্কেল করা হলো
+    return AnimatedScale(
+      scale: _focused ? 1.05 : 1.0, // ফোকাস হলে পুরো কার্ড ৫% বড় হবে
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeInOut,
+      child: InkWell(
+        focusNode: widget.focusNode,
+        autofocus: false,
+        // টিভিতে ফোকাস চেঞ্জ হলে আমাদের লোকাল স্টেট এবং প্যারামিটারের স্টেট দুটাই আপডেট হবে
+        onFocusChange: (v) {
+          setState(() => _focused = v);
+          if (widget.onFocusChange != null) {
+            widget.onFocusChange!(v); // এটি ChannelGrid এর অটো-স্ক্রোল চালু রাখবে
           }
-        }
-        return KeyEventResult.ignored;
-      },
-      child: GestureDetector(
-        onTap: widget.onTap, // মোবাইল বা টাচ টেস্টের জন্য ব্যাকআপ হিসেবে থাকলো
+        },
+        // InkWell ব্যবহার করায় টিভির রিমোটের OK বাটন চাপলে এটি ১০০% কাজ করবে
+        onTap: widget.onTap, 
+        borderRadius: BorderRadius.circular(widget.borderRadius),
+        splashColor: AppTheme.primary.withOpacity(0.1),
+        highlightColor: Colors.transparent,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 150),
           padding: widget.padding,
           decoration: BoxDecoration(
             color: _focused
@@ -65,23 +67,19 @@ class _TvFocusCardState extends State<TvFocusCard> {
             borderRadius: BorderRadius.circular(widget.borderRadius),
             border: Border.all(
               color: active ? AppTheme.primary : AppTheme.border,
-              width: active ? 2 : 1,
+              width: active ? 2.5 : 1, // ফোকাস আসলে বর্ডার একটু মোটা হবে যেন টিভিতে স্পষ্ট দেখা যায়
             ),
-            boxShadow: active
+            boxShadow: _focused // শুধুমাত্র আসলেই রিমোট ফোকাসে থাকলে গ্লো ইফেক্ট দেখাবে
                 ? [
                     BoxShadow(
-                      color: AppTheme.primary.withOpacity(0.35),
-                      blurRadius: 18,
-                      spreadRadius: 1,
+                      color: AppTheme.primary.withOpacity(0.4),
+                      blurRadius: 16,
+                      spreadRadius: 2,
                     )
                   ]
                 : [],
           ),
-          // টিভি অ্যাপের প্রিমিয়াম ফিলের জন্য ফোকাসড অবস্থায় সামান্য স্কেল (বড়) হবে
-          child: Transform.scale(
-            scale: _focused ? 1.04 : 1.0,
-            child: widget.child,
-          ),
+          child: widget.child,
         ),
       ),
     );
