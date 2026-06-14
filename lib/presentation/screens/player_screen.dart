@@ -18,9 +18,15 @@ import 'player_widgets/app_info_dialog.dart';
 class _SecurePlayerHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      ..findProxy = (uri) => "DIRECT" // চার্লস বা ক্যানারি প্রক্সি সম্পূর্ণ এড়িয়ে যাবে
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => false; // ফেক সার্টিফিকেট ডিনাই করবে
+    final client = super.createHttpClient(context);
+    
+    // চার্লস, ফিডলার বা ক্যানারি প্রক্সি সম্পূর্ণ এড়িয়ে রিকোয়েস্ট ডিরেক্ট পাঠাবে
+    client.findProxy = (uri) => "DIRECT"; 
+    
+    // ফেক বা ম্যান-ইন-দ্য-মিডল (MITM) প্রক্সি সার্টিফিকেট সম্পূর্ণ ব্লক করবে
+    client.badCertificateCallback = (X509Certificate cert, String host, int port) => false; 
+    
+    return client;
   }
 }
 
@@ -415,11 +421,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             side: BorderSide(color: AppTheme.primary, width: 1.5),
           ),
           title: const Text(
-            '앱 এক্সিট করবেন?',
+            'অ্যাপ এক্সিট করবেন?',
             style: TextStyle(color: Colors.white),
           ),
           content: const Text(
-            'সম্পূর্ণ 앱 বন্ধ করতে চান?',
+            'সম্পূর্ণ অ্যাপ বন্ধ করতে চান?',
             style: TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -563,7 +569,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     _disposeController();
     _focus.dispose();
     
-    // প্লেয়ার বন্ধ হলে ও হোম পেজে ব্যাক করলে গ্লোবাল ওভাররাইড রিলিজ করা হলো
+    // প্লেয়ার বন্ধ হলে গ্লোবাল ওভাররাইড রিলিজ করা হলো
     HttpOverrides.global = null;
     super.dispose();
   }
@@ -666,6 +672,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 }
+
+// ========== Settings Dialog (সম্পূর্ণ ক্লিন বাংলা ও ইংরেজি ফরম্যাট) ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -791,7 +799,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         children: [
           Icon(Icons.settings, color: Colors.white),
           Spacer(),
-          Text('플레이어 설정', style: TextStyle(color: Colors.white)),
+          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -803,7 +811,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             child: SwitchListTile(
               title: const Text('Boot Player (অটো প্লেয়ার)', style: TextStyle(color: Colors.white)),
               subtitle: Text(
-                '앱 चालू হলে সরাসরি লাইভ টিভি খুলবে',
+                'অ্যাপ चालू হলে সরাসরি লাইভ টিভি ওপেন হবে',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
               ),
               activeColor: AppTheme.primary,
@@ -825,7 +833,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     style: const TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
-                    '플랜: ${state.userProfile?.plan ?? ''}',
+                    'প্যাকেজ: ${state.userProfile?.plan ?? ''}',
                     style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                 ),
@@ -839,7 +847,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             onActivate: widget.onAppInfo,
             child: ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-              title: const Text('앱 정보 (App Info)', style: TextStyle(color: Colors.white)),
+              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
