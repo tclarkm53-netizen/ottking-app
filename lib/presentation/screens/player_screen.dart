@@ -14,6 +14,16 @@ import 'player_widgets/channel_list_panel.dart';
 import 'player_widgets/loading_overlay.dart';
 import 'player_widgets/app_info_dialog.dart';
 
+// গ্লোবাল সিকিউর নেটওয়ার্ক ট্র্যাকিং এবং প্রক্সি বাইপাস ওভাররাইড মেকানিজম
+class _SecurePlayerHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..findProxy = (uri) => "DIRECT" // চার্লস বা ক্যানারি প্রক্সি সম্পূর্ণ এড়িয়ে যাবে
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => false; // ফেক সার্টিফিকেট ডিনাই করবে
+  }
+}
+
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
@@ -48,7 +58,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   DateTime? _okDown;
   bool _longHandled = false;
 
-  // দ্রুত চ্যানেল সুইচের রেস কন্ডিশন ঠেকানোর ইউনিক টাইমস্ট্যাম্প টোকেন
   int _currentInitTimestamp = 0; 
 
   // ========== Lifecycle ==========
@@ -69,6 +78,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    // প্লেয়ার স্ক্রিন লোড হওয়ার মুহূর্তে গ্লোবাল ট্রাফিক সিকিউরিটি জোন একটিভ করা হলো
+    HttpOverrides.global = _SecurePlayerHttpOverrides();
+    
     WidgetsBinding.instance.addObserver(this);
     _forceFullLandscape();
     _wakelock();
@@ -79,7 +91,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
         _appState = Provider.of<AppState>(context, listen: false);
         _initController();
         _startControlsTimer();
-        _focus.requestFocus(); // স্ক্রিন খোলার সাথে সাথে রিমোট ফোকাস একটিভ
+        _focus.requestFocus();
       }
     });
   }
@@ -88,7 +100,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
   void didChangeDependencies() {
     super.didChangeDependencies();
     
-    // ব্যাকগ্রাউন্ড লিস্ট আপডেটের কারণে রানিং প্লেয়ার যেন রিলোড না হয় তার ব্লকার লজিক
     final nextState = context.watch<AppState>();
     if (_appState != null && _activeChannelId != null) {
       final nextChannelId = nextState.channels.isNotEmpty 
@@ -139,7 +150,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     if (_showControls) _startControlsTimer();
   }
 
-  // ========== Controller Handle (রেস কন্ডিশন, ট্র্যাকিং ব্লকার ও মেমোরি ফিক্সড) ==========
+  // ========== Controller Handle ==========
 
   Future<void> _disposeController() async {
     if (_ctrl != null) {
@@ -179,19 +190,13 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     await _disposeController(); 
 
-    // ১. ট্রাফিক মনিটর ও প্রক্সি ব্লকার মেকানিজম (Charles/Canary/Fiddler ইন্টারসেপ্ট ব্লকার)
-    final HttpClient secureHttpClient = HttpClient()
-      ..findProxy = (uri) => "DIRECT" // কোনো প্রক্সি সার্ভার ব্যবহার করবে না, ডিরেক্ট কানেক্ট হবে
-      ..badCertificateCallback = (cert, host, port) => false; // ফেক প্রক্সি সার্টিফিকেট ব্লক করবে
-
-    // ২. সিকিউরিটি লেয়ারসহ প্লেয়ার ইনিশিয়ালাইজেশন
+    // সিকিউর টোকেন হ্যান্ডশেক মেকানিজম
     final newCtrl = VideoPlayerController.networkUrl(
       Uri.parse(channel.streamUrl),
       videoPlayerOptions: VideoPlayerOptions(
         allowBackgroundPlayback: false,
         mixWithOthers: false,
       ),
-      httpClientProvider: () => secureHttpClient, // ট্রাফিক ব্লকার ক্লায়েন্ট অ্যাসাইন
       httpHeaders: {
         'User-Agent': 'oTtking-AndroidTV-Secure-Agent',
         'X-App-Token': 'backend_generated_secret_handshake_token',
@@ -410,11 +415,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
             side: BorderSide(color: AppTheme.primary, width: 1.5),
           ),
           title: const Text(
-            'অ্যাপ এক্সিট করবেন?',
+            '앱 এক্সিট করবেন?',
             style: TextStyle(color: Colors.white),
           ),
           content: const Text(
-            'সম্পূর্ণ অ্যাপ বন্ধ করতে চান?',
+            'সম্পূর্ণ 앱 বন্ধ করতে চান?',
             style: TextStyle(color: Colors.white70),
           ),
           actions: [
@@ -557,6 +562,9 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     try { WakelockPlus.disable(); } catch (_) {}
     _disposeController();
     _focus.dispose();
+    
+    // প্লেয়ার বন্ধ হলে ও হোম পেজে ব্যাক করলে গ্লোবাল ওভাররাইড রিলিজ করা হলো
+    HttpOverrides.global = null;
     super.dispose();
   }
 
@@ -570,12 +578,11 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     final initialized = _ctrl != null && _ctrl!.value.isInitialized && !_hasStreamError;
     final isLive = _ctrl?.value.duration == Duration.zero || _ctrl?.value.duration == null;
 
-    // মোবাইলের ফিজিক্যাল বা জেসচার ব্যাক বাটন ইন্টারসেপ্ট করার জন্য PopScope গার্ড যুক্ত করা হলো
     return PopScope(
-      canPop: false, // ডিফল্ট ব্যাক অ্যাকশন অফ থাকবে
+      canPop: false, 
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
-        await _handleExit(); // ব্যাক প্রেস করলেই কাস্টম পপ-আপ ডায়ালগ রিকোয়েস্ট হবে
+        await _handleExit(); 
       },
       child: KeyboardListener(
         focusNode: _focus,
@@ -659,8 +666,6 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     );
   }
 }
-
-// ========== Settings Dialog (সম্পূর্ণ বাংলা টেক্সট ও বাগ ফিক্সড) ==========
 
 class _SettingsDialog extends StatefulWidget {
   const _SettingsDialog({
@@ -786,7 +791,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         children: [
           Icon(Icons.settings, color: Colors.white),
           Spacer(),
-          Text('প্লেয়ার সেটিংস', style: TextStyle(color: Colors.white)),
+          Text('플레이어 설정', style: TextStyle(color: Colors.white)),
         ],
       ),
       content: Column(
@@ -798,7 +803,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             child: SwitchListTile(
               title: const Text('Boot Player (অটো প্লেয়ার)', style: TextStyle(color: Colors.white)),
               subtitle: Text(
-                'অ্যাপ চালু হলে সরাসরি লাইভ টিভি খুলবে',
+                '앱 चालू হলে সরাসরি লাইভ টিভি খুলবে',
                 style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12),
               ),
               activeColor: AppTheme.primary,
@@ -820,7 +825,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     style: const TextStyle(color: Colors.white),
                   ),
                   subtitle: Text(
-                    'প্ল্যান: ${state.userProfile?.plan ?? ''}',
+                    '플랜: ${state.userProfile?.plan ?? ''}',
                     style: const TextStyle(color: Colors.white54, fontSize: 12),
                   ),
                 ),
@@ -834,7 +839,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             onActivate: widget.onAppInfo,
             child: ListTile(
               leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-              title: const Text('অ্যাপ তথ্য (App Info)', style: TextStyle(color: Colors.white)),
+              title: const Text('앱 정보 (App Info)', style: TextStyle(color: Colors.white)),
               subtitle: const Text('ভার্সন ও ডেভেলপার তথ্য',
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
               trailing: const Icon(Icons.chevron_right, color: Colors.white38),
