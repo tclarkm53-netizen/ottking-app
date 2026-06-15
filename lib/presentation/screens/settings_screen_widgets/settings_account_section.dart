@@ -1,8 +1,6 @@
 // lib/presentation/screens/settings_screen_widgets/settings_account_section.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-// context.read ব্যবহার করার জন্য এই ইমপোর্টটি যুক্ত করা হয়েছে
 import 'package:provider/provider.dart'; 
 
 import '../../../core/theme/app_theme.dart';
@@ -23,44 +21,47 @@ class SettingsAccountSection extends StatelessWidget {
         const SectionHeader(title: 'অ্যাকাউন্ট'),
         const SizedBox(height: 16),
 
-        // ── Logged in: profile card ──────────────────────────────────────
+        // ── ১. লগইন থাকলে প্রোফাইল কার্ড (সাইজ ছোট ও কম্প্যাক্ট করা হয়েছে) ──
         if (appState.isAuthenticated && appState.userProfile != null) ...[
           AccountCard(profile: appState.userProfile!),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
         ],
 
-        // ── Two action cards: Login & Subscription ───────────────────────
-        SettingsTwoColRow(children: [
-          SettingCard(
-            icon: appState.isAuthenticated
-                ? Icons.manage_accounts_rounded
-                : Icons.login_rounded,
-            title: appState.isAuthenticated ? 'অ্যাকাউন্ট পরিচালনা' : 'লগইন করুন',
-            subtitle: appState.isAuthenticated
-                ? appState.userProfile?.email ?? ''
-                : 'প্রিমিয়াম চ্যানেল পেতে লগইন করুন',
-            highlight: appState.isAuthenticated,
-            onTap: () => showDialog(
-              context: context,
-              builder: (_) => const AuthDialog(),
+        // ── ২. অ্যাকশন কার্ড জোন: লগইন এবং সাবস্ক্রিপশন ───────────────────────
+        SettingsTwoColRow(
+          children: [
+            SettingCard(
+              icon: appState.isAuthenticated
+                  ? Icons.manage_accounts_rounded
+                  : Icons.login_rounded,
+              title: appState.isAuthenticated ? 'অ্যাকাউন্ট পরিচালনা' : 'লগইন করুন',
+              subtitle: appState.isAuthenticated
+                  ? appState.userProfile?.email ?? ''
+                  : 'প্রিমিয়াম চ্যানেল পেতে লগইন করুন',
+              highlight: appState.isAuthenticated,
+              onTap: () => showDialog(
+                context: context,
+                barrierDismissible: false, // রিমোট ইউজারদের জন্য নিরাপদ পপ-আপ কন্ট্রোল
+                builder: (_) => const AuthDialog(),
+              ),
             ),
-          ),
-          SettingCard(
-            icon: Icons.card_membership_rounded,
-            title: 'সাবস্ক্রিপশন',
-            subtitle: appState.isAuthenticated
-                ? 'প্ল্যান: ${appState.userProfile?.plan ?? "–"}'
-                : 'প্যাকেজ ও মূল্য দেখুন',
-            onTap: () => showDialog(
-              context: context,
-              builder: (_) => SubscriptionDialog(plans: appState.plans),
+            SettingCard(
+              icon: Icons.card_membership_rounded,
+              title: 'সাবস্ক্রিপশন',
+              subtitle: appState.isAuthenticated
+                  ? 'প্ল্যান: ${appState.userProfile?.plan ?? "–"}'
+                  : 'প্যাকেজ ও মূল্য দেখুন',
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => SubscriptionDialog(plans: appState.plans),
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
 
-        // ── Right panel label — বর্তমান সেকশন ──────────────────────────
+        // ── ৩. বর্তমান সেকশন হিন্ট ──────────────────────────────────────────
         const _SectionHint(
           icon: Icons.info_outline_rounded,
           text: 'বর্তমানে: অ্যাকাউন্ট সেটিংস — লগইন ও সাবস্ক্রিপশন পরিচালনা করুন।',
@@ -89,8 +90,10 @@ class _SectionHint extends StatelessWidget {
           Icon(icon, color: AppTheme.primary, size: 16),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(text,
-                style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            child: Text(
+              text,
+              style: const TextStyle(color: Colors.white54, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -98,7 +101,7 @@ class _SectionHint extends StatelessWidget {
   }
 }
 
-// ── Account profile card ──────────────────────────────────────────────────────
+// ── ৪. কম্প্যাক্ট অ্যাকাউন্ট প্রোফাইল কার্ড (টিভি রিমোট অপ্টিমাইজড) ──────────────────
 
 class AccountCard extends StatelessWidget {
   const AccountCard({super.key, required this.profile});
@@ -106,74 +109,100 @@ class AccountCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // এখন 'read' মেথডটি সঠিকভাবে কাজ করবে
     final appState = context.read<AppState>(); 
+    
     return Container(
-      padding: const EdgeInsets.all(20),
+      // প্যাডিং কমিয়ে কার্ডটি অনেক ছোট এবং প্রফেশনাল করা হয়েছে
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppTheme.card, const Color(0xFF131B2E).withOpacity(0.8)],
+          colors: [AppTheme.card, const Color(0xFF131B2E).withOpacity(0.6)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.primary.withOpacity(0.15)),
       ),
       child: Row(
         children: [
+          // ছোট সাইজের প্রোফাইল অবতার
           CircleAvatar(
-            radius: 28,
-            backgroundColor: AppTheme.primary.withOpacity(0.15),
+            radius: 20,
+            backgroundColor: AppTheme.primary.withOpacity(0.12),
             child: Text(
-              profile.email.isNotEmpty
-                  ? profile.email[0].toUpperCase()
-                  : '?',
+              profile.email.isNotEmpty ? profile.email[0].toUpperCase() : '?',
               style: const TextStyle(
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22),
+                color: AppTheme.primary,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
           ),
-          const SizedBox(width: 18),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(profile.email,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 4),
+                Text(
+                  profile.email,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
                 Row(
                   children: [
-                    const Icon(Icons.stars_rounded,
-                        color: Color(0xFFEAB308), size: 14),
+                    const Icon(
+                      Icons.stars_rounded,
+                      color: Color(0xFFEAB308),
+                      size: 12,
+                    ),
                     const SizedBox(width: 4),
-                    Text('প্ল্যান: ${profile.plan}',
-                        style: const TextStyle(
-                            color: Color(0xFFEAB308),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600)),
+                    Text(
+                      'প্ল্যান: ${profile.plan}',
+                      style: const TextStyle(
+                        color: Color(0xFFEAB308),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ],
             ),
           ),
+          
+          // টিভি রিমোটের জন্য ফোকাস-অ্যাওয়ার লগআউট বাটন
           TextButton.icon(
-            // অ্যান্ড্রয়েড টিভির জন্য লগআউট বাটনে ফোকাস স্টাইল যোগ করতে পারেন
             style: TextButton.styleFrom(
               foregroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ).copyWith(
+              // রিমোট দিয়ে বাটনে আসলে ব্যাকগ্রাউন্ড লালচে হাইলাইট হবে
+              overlayColor: WidgetStateProperty.resolveWith<Color?>(
+                (Set<WidgetState> states) {
+                  if (states.contains(WidgetState.focused)) {
+                    return Colors.red.withOpacity(0.15);
+                  }
+                  return null;
+                },
+              ),
             ),
             onPressed: () {
+              // সেটিংস স্ক্রিন পপ না করে শুধুমাত্র স্টেট লগআউট করা হলো
               appState.logout();
-              Navigator.pop(context);
             },
-            icon: const Icon(Icons.logout_rounded, size: 16),
-            label: const Text('লগআউট',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            icon: const Icon(Icons.logout_rounded, size: 14),
+            label: const Text(
+              'লগআউট',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+            ),
           ),
         ],
       ),
