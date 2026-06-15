@@ -39,6 +39,7 @@ class SettingsSystemSection extends StatelessWidget {
         const SectionHeader(title: 'সিস্টেম'),
         const SizedBox(height: 16),
 
+        // ── প্রথম লাইন (কার্ড ১ এবং কার্ড ২) ──────────────────────────────────
         SettingsTwoColRow(
           children: [
             // ── ১. ক্যাটালগ রিফ্রেশ ──────────────────────────────────────────
@@ -52,12 +53,19 @@ class SettingsSystemSection extends StatelessWidget {
             // ── ২. অ্যাপ আপডেট ────────────────────────────────────────────
             SettingCard(
               icon: Icons.system_update_rounded,
-              title: '앱 আপডেট',
+              title: 'অ্যাপ আপডেট',
               subtitle: 'নতুন ভার্সন চেক করুন',
               onTap: () => _checkForUpdates(context),
             ),
+          ],
+        ),
 
-            // ── ৩. ডেভেলপার (আলাদা কার্ড) ──────────────────────────────────
+        const SizedBox(height: 16), // দুই লাইনের মাঝে স্ট্যান্ডার্ড গ্যাপ
+
+        // ── দ্বিতীয় লাইন (কার্ড ৩ এবং কার্ড ৪) ─────────────────────────────────
+        SettingsTwoColRow(
+          children: [
+            // ── ৩. ডেভেলপার ────────────────────────────────────────────────
             SettingCard(
               icon: Icons.code_rounded,
               title: 'ডেভেলপার',
@@ -79,34 +87,6 @@ class SettingsSystemSection extends StatelessWidget {
               ),
             ),
           ],
-        ),
-
-        const SizedBox(height: 16),
-
-        // ── Section hint ─────────────────────────────────────────────────
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withOpacity(0.06),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppTheme.primary.withOpacity(0.15)),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.settings_applications_rounded,
-                color: AppTheme.primary,
-                size: 16,
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'বর্তমানে: সিস্টেম সেটিংস — ক্যাটালগ আপডেট, সিস্টেম আপডেট, ডেভেলপার ও অ্যাপের তথ্য।',
-                  style: TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
         ),
       ],
     );
@@ -230,6 +210,7 @@ class _AppInfoDialog extends StatelessWidget {
       ),
       actions: [
         TextButton(
+          autofocus: true,
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.primary,
             backgroundColor: Colors.transparent,
