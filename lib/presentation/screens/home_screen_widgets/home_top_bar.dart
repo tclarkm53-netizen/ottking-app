@@ -40,7 +40,7 @@ class HomeTopBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: const Text(
-                  'OTT',
+                  'OTTKING',
                   style: TextStyle(
                     color: Colors.black,
                     fontWeight: FontWeight.w900,
@@ -50,15 +50,7 @@ class HomeTopBar extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              const Text(
-                AppConstants.appName,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 22,
-                  letterSpacing: 1,
-                ),
-              ),
+              
             ],
           ),
 
