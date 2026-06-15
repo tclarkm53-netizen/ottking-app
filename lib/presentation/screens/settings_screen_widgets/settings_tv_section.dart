@@ -12,34 +12,40 @@ class SettingsTvSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // প্লেয়ার স্ক্রিনের মেথড ও স্টেট নেমিং কনভেনশনের সাথে ১০০% সিঙ্ক করা হলো
+    final isBootEnabled = appState.isPlayerBootEnabled;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SectionHeader(title: 'TV সেটিংস'),
         const SizedBox(height: 16),
 
-        SettingsTwoColRow(children: [
-          // ── Boot Player toggle ─────────────────────────────────────────
-          SettingCard(
-            icon: Icons.rocket_launch_rounded,
-            title: 'Boot Player',
-            subtitle: appState.bootToPlayer
-                ? 'চালু — অ্যাপ খুললেই লাইভ টিভি শুরু হবে'
-                : 'বন্ধ — হোম পেজে যাবে',
-            highlight: appState.bootToPlayer,
-            trailing: Switch(
-              value: appState.bootToPlayer,
-              activeColor: AppTheme.primary,
-              onChanged: (v) => appState.setBootToPlayer(v),
+        SettingsTwoColRow(
+          children: [
+            // ── Boot Player toggle ─────────────────────────────────────────
+            SettingCard(
+              icon: Icons.rocket_launch_rounded,
+              title: 'Boot Player (অটো প্লেয়ার)',
+              subtitle: isBootEnabled
+                  ? 'চালু — অ্যাপ খুললেই লাইভ টিভি শুরু হবে'
+                  : 'বন্ধ — হোম পেজে যাবে',
+              highlight: isBootEnabled,
+              // টিভি রিমোটের ফোকাস যেন কনফ্লিক্ট না করে, তাই সুইচের onChanged ডিরেক্ট কার্ডের টগলে পাস করা হলো
+              trailing: Switch(
+                value: isBootEnabled,
+                activeColor: AppTheme.primary,
+                onChanged: null, // null রাখলে ফোকাস সরাসরি মাদার 'SettingCard' রিসিভ করবে, যা টিভির জন্য আইডিয়াল
+              ),
+              onTap: () => appState.togglePlayerBoot(),
             ),
-            onTap: () => appState.setBootToPlayer(!appState.bootToPlayer),
-          ),
-        ]),
+          ],
+        ),
 
         const SizedBox(height: 16),
 
         // ── Right panel hint ───────────────────────────────────────────────
-        _BootHintCard(enabled: appState.bootToPlayer),
+        _BootHintCard(enabled: isBootEnabled),
       ],
     );
   }
@@ -68,9 +74,7 @@ class _BootHintCard extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            enabled
-                ? Icons.check_circle_rounded
-                : Icons.info_outline_rounded,
+            enabled ? Icons.check_circle_rounded : Icons.info_outline_rounded,
             color: enabled ? AppTheme.primary : Colors.white38,
             size: 20,
           ),
@@ -90,8 +94,8 @@ class _BootHintCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   enabled
-                      ? 'Boot Player চালু আছে। অ্যাপ চালু হলে সরাসরি লাইভ টিভি প্লেয়ারে যাবে।'
-                      : 'Boot Player বন্ধ আছে। অ্যাপ চালু হলে হোম পেজে যাবে।',
+                      ? 'Boot Player চালু আছে। অ্যাপ রান হওয়ার সাথে সাথে সরাসরি লাইভ টিভি প্লেয়ার ওপেন হবে।'
+                      : 'Boot Player বন্ধ আছে। অ্যাপ রান হওয়ার পর প্রথমে স্ট্যান্ডার্ড হোম পেজ ওপেন হবে।',
                   style: const TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ],
