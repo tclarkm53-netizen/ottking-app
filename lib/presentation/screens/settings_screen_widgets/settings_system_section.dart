@@ -21,6 +21,16 @@ class SettingsSystemSection extends StatelessWidget {
     );
   }
 
+  void _checkForUpdates(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('নতুন আপডেটের জন্য চেক করা হচ্ছে...'),
+        backgroundColor: AppTheme.card,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -29,28 +39,49 @@ class SettingsSystemSection extends StatelessWidget {
         const SectionHeader(title: 'সিস্টেম'),
         const SizedBox(height: 16),
 
-        SettingsTwoColRow(children: [
-          // ── Catalog refresh ──────────────────────────────────────────
-          SettingCard(
-            icon: Icons.sync_rounded,
-            title: 'ক্যাটালগ রিফ্রেশ',
-            subtitle: 'চ্যানেল লিস্ট আপডেট করুন',
-            onTap: () => _refreshCatalog(context),
-          ),
-
-          // ── App Info ─────────────────────────────────────────────────
-          SettingCard(
-            icon: Icons.info_outline_rounded,
-            title: '앱 তথ্য',
-            subtitle: 'ভার্সন, ডেভেলপার তথ্য',
-            onTap: () => showDialog(
-              context: context,
-              builder: (_) => const _AppInfoDialog(),
+        SettingsTwoColRow(
+          children: [
+            // ── ১. ক্যাটালগ রিফ্রেশ ──────────────────────────────────────────
+            SettingCard(
+              icon: Icons.sync_rounded,
+              title: 'ক্যাটালগ রিফ্রেশ',
+              subtitle: 'চ্যানেল লিস্ট আপডেট করুন',
+              onTap: () => _refreshCatalog(context),
             ),
-          ),
-        ]),
 
-        const SizedBox(height: 12),
+            // ── ২. অ্যাপ আপডেট ────────────────────────────────────────────
+            SettingCard(
+              icon: Icons.system_update_rounded,
+              title: '앱 আপডেট',
+              subtitle: 'নতুন ভার্সন চেক করুন',
+              onTap: () => _checkForUpdates(context),
+            ),
+
+            // ── ৩. ডেভেলপার (আলাদা কার্ড) ──────────────────────────────────
+            SettingCard(
+              icon: Icons.code_rounded,
+              title: 'ডেভেলপার',
+              subtitle: 'Anirban Sumon',
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => const _DeveloperDialog(),
+              ),
+            ),
+
+            // ── ৪. অ্যাপ তথ্য ──────────────────────────────────────────────
+            SettingCard(
+              icon: Icons.info_outline_rounded,
+              title: 'অ্যাপ তথ্য',
+              subtitle: 'ভার্সন ও সিস্টেম তথ্য',
+              onTap: () => showDialog(
+                context: context,
+                builder: (_) => const _AppInfoDialog(),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
 
         // ── Section hint ─────────────────────────────────────────────────
         Container(
@@ -62,12 +93,15 @@ class SettingsSystemSection extends StatelessWidget {
           ),
           child: Row(
             children: [
-              const Icon(Icons.settings_applications_rounded,
-                  color: AppTheme.primary, size: 16),
+              const Icon(
+                Icons.settings_applications_rounded,
+                color: AppTheme.primary,
+                size: 16,
+              ),
               const SizedBox(width: 10),
               const Expanded(
                 child: Text(
-                  'বর্তমানে: সিস্টেম সেটিংস — ক্যাটালগ আপডেট ও অ্যাপ তথ্য।',
+                  'বর্তমানে: সিস্টেম সেটিংস — ক্যাটালগ আপডেট, সিস্টেম আপডেট, ডেভেলপার ও অ্যাপের তথ্য।',
                   style: TextStyle(color: Colors.white54, fontSize: 12),
                 ),
               ),
@@ -79,7 +113,79 @@ class SettingsSystemSection extends StatelessWidget {
   }
 }
 
-// ── App Info Dialog ────────────────────────────────────────────────────────────
+// ── ৩. Developer Dialog ──────────────────────────────────────────────────────
+
+class _DeveloperDialog extends StatelessWidget {
+  const _DeveloperDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.black.withOpacity(0.95),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppTheme.primary, width: 1.5),
+      ),
+      title: const Row(
+        children: [
+          Icon(Icons.person_rounded, color: AppTheme.primary),
+          SizedBox(width: 10),
+          Text('ডেভেলপার তথ্য', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'প্রধান ডেভেলপার ও প্রজেক্ট আর্কিটেক্ট:',
+            style: TextStyle(color: Colors.white54, fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Anirban Sumon',
+            style: TextStyle(
+              color: AppTheme.primary,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Full Stack Developer (IPTV & Mobile Systems)',
+            style: TextStyle(color: Colors.white38, fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          autofocus: true,
+          style: TextButton.styleFrom(
+            foregroundColor: AppTheme.primary,
+            backgroundColor: Colors.transparent,
+          ).copyWith(
+            overlayColor: WidgetStateProperty.resolveWith<Color?>(
+              (Set<WidgetState> states) {
+                if (states.contains(WidgetState.focused)) {
+                  return AppTheme.primary.withOpacity(0.15);
+                }
+                return null;
+              },
+            ),
+          ),
+          onPressed: () => Navigator.pop(context),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Text('বন্ধ', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── ৪. App Info Dialog ───────────────────────────────────────────────────────
 
 class _AppInfoDialog extends StatelessWidget {
   const _AppInfoDialog();
@@ -99,56 +205,39 @@ class _AppInfoDialog extends StatelessWidget {
           Text('অ্যাপ তথ্য', style: TextStyle(color: Colors.white)),
         ],
       ),
-      content: Column(
+      content: const Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'Live TV Player',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold),
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          const SizedBox(height: 8),
-          const Text('Version 1.0.0',
-              style: TextStyle(color: Colors.white70, fontSize: 14)),
-          const SizedBox(height: 16),
-          Container(
-            width: double.maxFinite, // উইডথ কনসিস্টেন্ট রাখার জন্য
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('ডেভেলপার:',
-                    style: TextStyle(color: Colors.white54, fontSize: 12)),
-                SizedBox(height: 4),
-                Text('Anirban Sumon',
-                    style: TextStyle(
-                        color: AppTheme.primary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold)),
-              ],
-            ),
+          SizedBox(height: 8),
+          Text(
+            'Version 1.0.0',
+            style: TextStyle(color: Colors.white70, fontSize: 14),
+          ),
+          SizedBox(height: 4),
+          Text(
+            'All rights reserved.',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
           ),
         ],
       ),
       actions: [
         TextButton(
-          autofocus: true, // ডায়ালগ ওপেন হলে রিমোটের ফোকাস সরাসরি এই বাটনে যাবে
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.primary,
-            // রিমোট দিয়ে বাটন সিলেক্ট করলে ব্যাকগ্রাউন্ড কালার চেঞ্জ হবে
             backgroundColor: Colors.transparent,
           ).copyWith(
             overlayColor: WidgetStateProperty.resolveWith<Color?>(
               (Set<WidgetState> states) {
                 if (states.contains(WidgetState.focused)) {
-                  return AppTheme.primary.withOpacity(0.15); // ফোকাসড ব্যাকগ্রাউন্ড
+                  return AppTheme.primary.withOpacity(0.15);
                 }
                 return null;
               },
